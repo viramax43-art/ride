@@ -1,10 +1,10 @@
 import java.io.File
 
 plugins {
-    id("com.android.application") version "9.0.1" apply false
-    id("com.android.legacy-kapt") version "9.0.1" apply false
-    id("com.google.dagger.hilt.android") version "2.60.1" apply false
-    id("com.google.gms.google-services") version "4.4.2" apply false
+    alias(libs.plugins.android.application) apply false
+    alias(libs.plugins.android.legacy.kapt) apply false
+    alias(libs.plugins.hilt.android) apply false
+    alias(libs.plugins.google.services) apply false
 }
 
 allprojects {
