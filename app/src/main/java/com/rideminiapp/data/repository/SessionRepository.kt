@@ -1,9 +1,10 @@
 package com.rideminiapp.data.repository
 
-import android.util.Log
 import com.rideminiapp.BuildConfig
 import com.rideminiapp.data.local.AppPrefs
 import com.rideminiapp.data.local.MmkvStore
+import com.rideminiapp.data.local.SecureStorage
+import com.rideminiapp.util.AppLog
 import com.rideminiapp.data.remote.InitDataRequest
 import com.rideminiapp.data.remote.CurrentUserDto
 import com.rideminiapp.data.remote.RideApiService
@@ -20,6 +21,7 @@ import javax.inject.Singleton
 @Singleton
 class SessionRepository @Inject constructor(
     private val store: MmkvStore,
+    private val secureStorage: SecureStorage,
     @PublicApi private val publicApi: RideApiService,
     @CookieApi private val cookieApi: RideApiService,
     @PassengerApi private val bearerApi: RideApiService,
@@ -31,7 +33,8 @@ class SessionRepository @Inject constructor(
     fun loadState(): SessionState {
         val role = Role.fromBackend(store.getString(AppPrefs.PREFERRED_ROLE, ""))
         val currentUsername = store.getString(AppPrefs.CURRENT_USERNAME, "").takeIf { it.isNotBlank() }
-        val passengerToken = store.getString(AppPrefs.PASSENGER_TOKEN, "").takeIf { it.isNotBlank() }
+        val passengerToken = secureStorage.getAccessToken()
+            ?: store.getString(AppPrefs.PASSENGER_TOKEN, "").takeIf { it.isNotBlank() }
         val storedHandoffUrl = store.getString(AppPrefs.HANDOFF_URL, BuildConfig.DEFAULT_HANDOFF_URL).trim()
         val storedLanguage = store.getString(AppPrefs.PREFERRED_LANGUAGE, "ru").trim().lowercase()
         val language = when {
@@ -52,35 +55,35 @@ class SessionRepository @Inject constructor(
             apiBaseUrl = store.getString(AppPrefs.API_BASE_URL, BuildConfig.DEFAULT_API_BASE_URL),
             handoffUrl = normalizeTelegramHandoffUrl(storedHandoffUrl),
         )
-        Log.d(TAG, "loadState username=${state.currentUsername} role=${state.role} passengerToken=${state.passengerToken != null} driverCookie=${state.driverCookieReady} adminCookie=${state.adminCookieReady}")
+        AppLog.d(TAG, "loadState username=${state.currentUsername} role=${state.role} passengerToken=${state.passengerToken != null} driverCookie=${state.driverCookieReady} adminCookie=${state.adminCookieReady}")
         return state
     }
 
     fun saveApiBaseUrl(url: String) {
         val normalized = url.trim()
-        Log.d(TAG, "saveApiBaseUrl length=${normalized.length}")
+        AppLog.d(TAG, "saveApiBaseUrl length=${normalized.length}")
         store.putString(AppPrefs.API_BASE_URL, normalized)
     }
 
     fun saveHandoffUrl(url: String) {
         val normalized = normalizeTelegramHandoffUrl(url.trim())
-        Log.d(TAG, "saveHandoffUrl normalized=${normalized}")
+        AppLog.d(TAG, "saveHandoffUrl normalized=${normalized}")
         store.putString(AppPrefs.HANDOFF_URL, normalized)
     }
 
     fun saveLanguage(language: String) {
-        Log.d(TAG, "saveLanguage language=$language")
+        AppLog.d(TAG, "saveLanguage language=$language")
         store.putString(AppPrefs.PREFERRED_LANGUAGE, language)
     }
 
     fun saveRole(role: Role) {
-        Log.d(TAG, "saveRole role=$role")
+        AppLog.d(TAG, "saveRole role=$role")
         store.putString(AppPrefs.PREFERRED_ROLE, role.name.lowercase())
     }
 
     fun saveCurrentUsername(username: String?) {
         val normalized = username?.trim().orEmpty()
-        Log.d(TAG, "saveCurrentUsername username=${normalized.ifBlank { "<blank>" }}")
+        AppLog.d(TAG, "saveCurrentUsername username=${normalized.ifBlank { "<blank>" }}")
         if (normalized.isBlank()) {
             store.remove(AppPrefs.CURRENT_USERNAME)
         } else {
@@ -90,8 +93,9 @@ class SessionRepository @Inject constructor(
 
     fun storePassengerToken(token: String) {
         val normalized = token.trim()
-        Log.d(TAG, "storePassengerToken tokenSet=${normalized.isNotBlank()}")
-        store.putString(AppPrefs.PASSENGER_TOKEN, normalized)
+        AppLog.d(TAG, "storePassengerToken tokenSet=${normalized.isNotBlank()}")
+        secureStorage.saveAccessToken(normalized)
+        store.remove(AppPrefs.PASSENGER_TOKEN)
         clearTelegramHandoffAttempted()
     }
 
@@ -106,7 +110,7 @@ class SessionRepository @Inject constructor(
     }
 
     suspend fun loginPassengerWithTelegramInitData(initData: String): String {
-        Log.d(TAG, "loginPassengerWithTelegramInitData initDataSet=${initData.isNotBlank()}")
+        AppLog.d(TAG, "loginPassengerWithTelegramInitData initDataSet=${initData.isNotBlank()}")
         val response = publicApi.loginWithTelegram(InitDataRequest(initData))
         storePassengerToken(response.accessToken)
         saveRole(Role.PASSENGER)
@@ -117,8 +121,8 @@ class SessionRepository @Inject constructor(
     }
 
     suspend fun refreshCurrentUserFromPassengerToken(): CurrentUserDto? {
-        val token = store.getString(AppPrefs.PASSENGER_TOKEN, "").takeIf { it.isNotBlank() } ?: return null
-        Log.d(TAG, "refreshCurrentUserFromPassengerToken tokenSet=${token.isNotBlank()}")
+        val token = secureStorage.getAccessToken() ?: return null
+        AppLog.d(TAG, "refreshCurrentUserFromPassengerToken tokenSet=${token.isNotBlank()}")
         return runCatching {
             val currentUser = bearerApi.getCurrentUser()
             saveCurrentUsername(currentUser.username)
@@ -136,7 +140,7 @@ class SessionRepository @Inject constructor(
     }
 
     suspend fun loginDriverWithKey(key: String): Boolean {
-        Log.d(TAG, "loginDriverWithKey keySet=${key.isNotBlank()}")
+        AppLog.d(TAG, "loginDriverWithKey keySet=${key.isNotBlank()}")
         cookieApi.loginDriver(mapOf("key" to key))
         store.putBoolean("driver_cookie_ready", true)
         saveRole(Role.DRIVER)
@@ -144,7 +148,7 @@ class SessionRepository @Inject constructor(
     }
 
     suspend fun loginAdminWithKey(key: String): Boolean {
-        Log.d(TAG, "loginAdminWithKey keySet=${key.isNotBlank()}")
+        AppLog.d(TAG, "loginAdminWithKey keySet=${key.isNotBlank()}")
         cookieApi.loginAdmin(mapOf("key" to key))
         store.putBoolean("admin_cookie_ready", true)
         saveRole(Role.ADMIN)
@@ -152,7 +156,7 @@ class SessionRepository @Inject constructor(
     }
 
     suspend fun bootstrapPassenger(): Boolean {
-        val token = store.getString(AppPrefs.PASSENGER_TOKEN, "")
+        val token = secureStorage.getAccessToken().orEmpty()
         if (token.isBlank()) return false
         return runCatching {
             bearerApi.getCurrentUser()
@@ -178,7 +182,8 @@ class SessionRepository @Inject constructor(
     }
 
     fun logoutAll() {
-        Log.d(TAG, "logoutAll")
+        AppLog.d(TAG, "logoutAll")
+        secureStorage.clear()
         store.remove(AppPrefs.PASSENGER_TOKEN)
         store.remove(AppPrefs.PREFERRED_ROLE)
         store.remove(AppPrefs.CURRENT_USERNAME)
@@ -189,7 +194,7 @@ class SessionRepository @Inject constructor(
     }
 
     fun markTelegramHandoffAttempted() {
-        Log.d(TAG, "markTelegramHandoffAttempted")
+        AppLog.d(TAG, "markTelegramHandoffAttempted")
         store.putBoolean(AppPrefs.TELEGRAM_HANDOFF_ATTEMPTED, true)
     }
 

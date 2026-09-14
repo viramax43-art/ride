@@ -426,7 +426,7 @@ class WebAppFragment : Fragment() {
     @SuppressLint("SetJavaScriptEnabled")
     private fun configureWebView() {
         val webView = webView ?: return
-        WebView.setWebContentsDebuggingEnabled(true)
+        WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
         webView.isFocusable = true
         webView.isFocusableInTouchMode = true
         webView.requestFocus()
@@ -439,7 +439,11 @@ class WebAppFragment : Fragment() {
         settings.useWideViewPort = true
         settings.loadWithOverviewMode = true
         settings.cacheMode = WebSettings.LOAD_NO_CACHE
-        settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+        settings.mixedContentMode = if (BuildConfig.DEBUG) {
+            WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+        } else {
+            WebSettings.MIXED_CONTENT_NEVER_ALLOW
+        }
         settings.userAgentString = "${settings.userAgentString} RideMiniApp/1.0"
 
         CookieManager.getInstance().apply {
@@ -757,7 +761,11 @@ class WebAppFragment : Fragment() {
                 try {
                     if (!state.adminCookieReady) {
                         Log.d(TAG, "admin bootstrap -> login with built-in key")
-                        sessionRepository.loginAdminWithKey(BuildConfig.DEFAULT_ADMIN_KEY)
+                        val adminKey = BuildConfig.ADMIN_KEY.trim()
+                        if (adminKey.isBlank()) {
+                            throw IllegalStateException("ADMIN_KEY is not configured in local.properties")
+                        }
+                        sessionRepository.loginAdminWithKey(adminKey)
                     }
                     syncAdminCookies(targetUrl)
                     webView?.loadUrl(adminDashboardUrl)
@@ -1045,9 +1053,10 @@ class WebAppFragment : Fragment() {
     }
 
     private fun buildFrontendLaunchUrl(baseUrl: String, token: String): String {
+        pendingToken = token
+        tokenApplied = false
         return Uri.parse(baseUrl)
             .buildUpon()
-            .appendQueryParameter("accessToken", token)
             .appendQueryParameter("native", "1")
             .appendQueryParameter("v", "20260727-camera-one-tap")
             .build()

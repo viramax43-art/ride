@@ -1,7 +1,23 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("com.android.legacy-kapt")
     id("com.google.dagger.hilt.android")
+}
+
+val localProps = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) {
+        load(file.inputStream())
+    }
+}
+
+val keystoreProps = Properties().apply {
+    val file = rootProject.file("keystore.properties")
+    if (file.exists()) {
+        load(file.inputStream())
+    }
 }
 
 android {
@@ -17,7 +33,11 @@ android {
 
         buildConfigField("String", "DEFAULT_API_BASE_URL", "\"https://ride.leandoer.online\"")
         buildConfigField("String", "DEFAULT_HANDOFF_URL", "\"https://t.me/rideminiapp_bot?start=auth\"")
-        buildConfigField("String", "DEFAULT_ADMIN_KEY", "\"***REDACTED***\"")
+        buildConfigField(
+            "String",
+            "ADMIN_KEY",
+            "\"${localProps.getProperty("ADMIN_KEY", "")}\"",
+        )
     }
 
     flavorDimensions += "app"
@@ -33,6 +53,33 @@ android {
             applicationId = "com.rideminiapp.admin"
             buildConfigField("String", "APP_VARIANT", "\"admin\"")
             buildConfigField("boolean", "IS_ADMIN_APP", "true")
+        }
+    }
+
+    signingConfigs {
+        if (keystoreProps.getProperty("storeFile")?.isNotBlank() == true) {
+            create("release") {
+                keyAlias = keystoreProps.getProperty("keyAlias", "")
+                keyPassword = keystoreProps.getProperty("keyPassword", "")
+                storeFile = file(keystoreProps.getProperty("storeFile", "release.jks"))
+                storePassword = keystoreProps.getProperty("storePassword", "")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+            signingConfigs.findByName("release")?.let { signingConfig = it }
+        }
+        debug {
+            isMinifyEnabled = false
+            applicationIdSuffix = ".debug"
         }
     }
 
@@ -64,6 +111,7 @@ dependencies {
     implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("androidx.constraintlayout:constraintlayout:2.2.0")
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
     implementation("org.osmdroid:osmdroid-android:6.1.20")
     implementation("com.tencent:mmkv:1.3.12")

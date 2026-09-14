@@ -11,6 +11,9 @@ __MACOSX/
 .kotlin/
 build/
 local.properties
+keystore.properties
+*.jks
+*.keystore
 *.apk
 *.aab
 captures/
