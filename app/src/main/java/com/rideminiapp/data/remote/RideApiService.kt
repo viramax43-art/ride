@@ -18,6 +18,9 @@ interface RideApiService {
     @POST("/api/auth")
     suspend fun loginWithTelegram(@Body body: InitDataRequest): TokenResponse
 
+    @POST("/api/push/register")
+    suspend fun registerPushToken(@Body body: Map<String, String>): Map<String, Boolean>
+
     @GET("/api/users/me")
     suspend fun getCurrentUser(): CurrentUserDto
 

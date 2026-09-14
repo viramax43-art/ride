@@ -9,8 +9,8 @@ import android.provider.OpenableColumns
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
-import android.util.Log
 import android.util.Base64
+import com.rideminiapp.util.AppLog
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -97,7 +97,7 @@ class WebAppFragment : Fragment() {
             val origin = pendingGeolocationOrigin
             pendingGeolocationCallback = null
             pendingGeolocationOrigin = null
-            Log.d(TAG, "locationPermissionResult granted=$granted origin=$origin")
+            AppLog.d(TAG, "locationPermissionResult granted=$granted origin=$origin")
             callback?.invoke(origin, granted, granted)
             if (isAdded && !isAdminApp) {
                 viewLifecycleOwner.lifecycleScope.launch {
@@ -109,7 +109,7 @@ class WebAppFragment : Fragment() {
     private val cameraPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             cameraPermissionRequestInFlight = false
-            Log.d(TAG, "cameraPermissionResult granted=$granted")
+            AppLog.d(TAG, "cameraPermissionResult granted=$granted")
             if (granted) {
                 val permissionRequest = pendingPermissionRequest
                 pendingPermissionRequest = null
@@ -144,7 +144,7 @@ class WebAppFragment : Fragment() {
             stateViewModel.pendingCameraCaptureUri = null
             stateViewModel.fileChooserInFlight = false
             stateViewModel.fileChooserJustReturned = true
-            Log.d(
+            AppLog.d(
                 TAG,
                 "fileChooserResult resultCode=${result.resultCode} data=${result.data} parsed=${parsedUris?.joinToString()} resolved=${uris?.joinToString()} callbackPresent=${callback != null}",
             )
@@ -158,7 +158,7 @@ class WebAppFragment : Fragment() {
                         uris.mapNotNull { uri -> readFilePayload(uri) }
                     }
                     if (payloads.isEmpty()) {
-                        Log.w(TAG, "fileChooserResult no payloads could be read from URIs=${uris.joinToString()}")
+                        AppLog.w(TAG, "fileChooserResult no payloads could be read from URIs=${uris.joinToString()}")
                         return@launch
                     }
                     stateViewModel.pendingFileUploadPayloads = payloads
@@ -237,12 +237,12 @@ class WebAppFragment : Fragment() {
         } else if (restoreWebViewState(savedInstanceState)) {
             val restoredUrl = webView?.url.orEmpty()
             if (isTelegramUrl(restoredUrl)) {
-                Log.d(TAG, "onViewCreated dropping telegram restore url=$restoredUrl")
+                AppLog.d(TAG, "onViewCreated dropping telegram restore url=$restoredUrl")
                 webView?.loadUrl("about:blank")
                 loadingOverlay?.visibility = View.VISIBLE
                 startFlow()
             } else {
-                Log.d(TAG, "onViewCreated restored webview state url=$restoredUrl")
+                AppLog.d(TAG, "onViewCreated restored webview state url=$restoredUrl")
                 loadingOverlay?.visibility = View.GONE
             }
         } else {
@@ -266,7 +266,7 @@ class WebAppFragment : Fragment() {
         val state = Bundle()
         val currentUrl = webView?.url.orEmpty()
         if (isTelegramUrl(currentUrl)) {
-            Log.d(TAG, "onSaveInstanceState skip telegram url=$currentUrl")
+            AppLog.d(TAG, "onSaveInstanceState skip telegram url=$currentUrl")
         } else {
             webView?.saveState(state)
         }
@@ -276,17 +276,17 @@ class WebAppFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         if (stateViewModel.fileChooserInFlight) {
-            Log.d(TAG, "onResume skipped because file chooser is in flight")
+            AppLog.d(TAG, "onResume skipped because file chooser is in flight")
             return
         }
         val chooserUrl = stateViewModel.webUrlBeforeFileChooser
         if (!chooserUrl.isNullOrBlank()) {
             val currentUrl = webView?.url.orEmpty()
             if (currentUrl.isBlank() || currentUrl == "about:blank") {
-                Log.d(TAG, "onResume restoring page after file chooser chooserUrl=$chooserUrl currentUrl=$currentUrl")
+                AppLog.d(TAG, "onResume restoring page after file chooser chooserUrl=$chooserUrl currentUrl=$currentUrl")
                 webView?.loadUrl(chooserUrl)
             } else {
-                Log.d(TAG, "onResume keeping page after file chooser chooserUrl=$chooserUrl currentUrl=$currentUrl")
+                AppLog.d(TAG, "onResume keeping page after file chooser chooserUrl=$chooserUrl currentUrl=$currentUrl")
             }
             stateViewModel.webUrlBeforeFileChooser = null
             stateViewModel.fileChooserJustReturned = false
@@ -295,21 +295,21 @@ class WebAppFragment : Fragment() {
         if (stateViewModel.fileChooserJustReturned) {
             stateViewModel.fileChooserJustReturned = false
             stateViewModel.webUrlBeforeFileChooser = null
-            Log.d(TAG, "onResume file chooser returned, keeping current page")
+            AppLog.d(TAG, "onResume file chooser returned, keeping current page")
             return
         }
         val currentUrl = webView?.url.orEmpty()
         if (currentUrl.isNotBlank() && currentUrl != "about:blank") {
-            Log.d(TAG, "onResume kept existing web content currentUrl=$currentUrl")
+            AppLog.d(TAG, "onResume kept existing web content currentUrl=$currentUrl")
             return
         }
         val fallbackUrl = stateViewModel.lastKnownWebUrl.orEmpty()
         if (fallbackUrl.isNotBlank() && fallbackUrl != "about:blank") {
-            Log.d(TAG, "onResume restoring last known page fallbackUrl=$fallbackUrl")
+            AppLog.d(TAG, "onResume restoring last known page fallbackUrl=$fallbackUrl")
             webView?.loadUrl(fallbackUrl)
             return
         }
-        Log.d(TAG, "onResume falling back to startFlow currentUrl=$currentUrl fallbackUrl=$fallbackUrl")
+        AppLog.d(TAG, "onResume falling back to startFlow currentUrl=$currentUrl fallbackUrl=$fallbackUrl")
         startFlow()
     }
 
@@ -416,9 +416,9 @@ class WebAppFragment : Fragment() {
                 current.height = (heightCssPx * density).toInt()
                 current.width = (heightCssPx * density).toInt()
                 button.layoutParams = current
-                Log.d(TAG, "refreshButtonAligned top=$topCssPx size=$heightCssPx")
+                AppLog.d(TAG, "refreshButtonAligned top=$topCssPx size=$heightCssPx")
             }.onFailure { error ->
-                Log.w(TAG, "refreshButton alignment failed value=$value", error)
+                AppLog.w(TAG, "refreshButton alignment failed value=$value", error)
             }
         }
     }
@@ -453,9 +453,9 @@ class WebAppFragment : Fragment() {
 
         webView.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
-                Log.d(TAG, "onPageStarted url=$url")
+                AppLog.d(TAG, "onPageStarted url=$url")
             if (url != null && isTelegramUrl(url)) {
-                Log.d(TAG, "onPageStarted blocking telegram url=$url")
+                AppLog.d(TAG, "onPageStarted blocking telegram url=$url")
                 view?.stopLoading()
                 if (isAdminApp) {
                     loadingOverlay?.visibility = View.GONE
@@ -469,13 +469,13 @@ class WebAppFragment : Fragment() {
 
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                 val url = request?.url ?: return false
-                Log.d(TAG, "shouldOverrideUrlLoading request=$url")
+                AppLog.d(TAG, "shouldOverrideUrlLoading request=$url")
                 return handleUrl(url)
             }
 
             override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
                 val parsed = url?.let(Uri::parse) ?: return false
-                Log.d(TAG, "shouldOverrideUrlLoading legacy=$parsed")
+                AppLog.d(TAG, "shouldOverrideUrlLoading legacy=$parsed")
                 return handleUrl(parsed)
             }
 
@@ -484,7 +484,7 @@ class WebAppFragment : Fragment() {
                 request: WebResourceRequest?,
                 error: android.webkit.WebResourceError?,
             ) {
-                Log.e(TAG, "webError url=${request?.url} code=${error?.errorCode} desc=${error?.description}")
+                AppLog.e(TAG, "webError url=${request?.url} code=${error?.errorCode} desc=${error?.description}")
                 super.onReceivedError(view, request, error)
             }
 
@@ -493,13 +493,13 @@ class WebAppFragment : Fragment() {
                 request: WebResourceRequest?,
                 errorResponse: android.webkit.WebResourceResponse?,
             ) {
-                Log.e(TAG, "httpError url=${request?.url} status=${errorResponse?.statusCode} reason=${errorResponse?.reasonPhrase}")
+                AppLog.e(TAG, "httpError url=${request?.url} status=${errorResponse?.statusCode} reason=${errorResponse?.reasonPhrase}")
                 val requestPath = request?.url?.path.orEmpty()
                 if (!isAdminApp &&
                     errorResponse?.statusCode == 401 &&
                     requestPath.startsWith("/api/admin/")
                 ) {
-                    Log.d(TAG, "httpError 401 ignored for user app admin endpoint path=$requestPath")
+                    AppLog.d(TAG, "httpError 401 ignored for user app admin endpoint path=$requestPath")
                     super.onReceivedHttpError(view, request, errorResponse)
                     return
                 }
@@ -509,12 +509,12 @@ class WebAppFragment : Fragment() {
                 ) {
                     val storedPassengerToken = sessionRepository.loadState().passengerToken
                     if (!storedPassengerToken.isNullOrBlank()) {
-                        Log.d(TAG, "httpError 401 passenger token exists -> keep page and reapply token requestPath=$requestPath")
+                        AppLog.d(TAG, "httpError 401 passenger token exists -> keep page and reapply token requestPath=$requestPath")
                         view?.post { applyPersistedPassengerTokenIfNeeded(view) }
                         super.onReceivedHttpError(view, request, errorResponse)
                         return
                     }
-                    Log.d(TAG, "httpError 401 -> telegram handoff requestPath=$requestPath")
+                    AppLog.d(TAG, "httpError 401 -> telegram handoff requestPath=$requestPath")
                     sessionRepository.logoutAll()
                     redirectToTelegramAndFinish("http-401 ${request?.url}")
                     return
@@ -527,7 +527,7 @@ class WebAppFragment : Fragment() {
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
-                Log.d(TAG, "onPageFinished url=$url pendingToken=${pendingToken != null}")
+                AppLog.d(TAG, "onPageFinished url=$url pendingToken=${pendingToken != null}")
                 loadingOverlay?.visibility = View.GONE
                 updateRefreshButtonLayout(url)
                 val pageView = view ?: return
@@ -543,7 +543,7 @@ class WebAppFragment : Fragment() {
                 deliverPendingNativeFileUploads()
                 pageView.evaluateJavascript(
                     "(function(){try{return JSON.stringify({title:document.title,url:location.href})}catch(e){return 'n/a'}})();",
-                    { value -> Log.d(TAG, "pageSnapshot=$value") }
+                    { value -> AppLog.d(TAG, "pageSnapshot=$value") }
                 )
                 pageView.evaluateJavascript(
                     """
@@ -579,7 +579,7 @@ class WebAppFragment : Fragment() {
                           }
                         })();
                     """.trimIndent(),
-                    { value -> Log.d(TAG, "pageMetrics=$value") }
+                    { value -> AppLog.d(TAG, "pageMetrics=$value") }
                 )
             }
         }
@@ -591,7 +591,7 @@ class WebAppFragment : Fragment() {
                 fileChooserParams: FileChooserParams?,
             ): Boolean {
                 if (filePathCallback == null) return false
-                Log.d(
+                AppLog.d(
                     TAG,
                     "onShowFileChooser currentUrl=${this@WebAppFragment.webView?.url} acceptTypes=${fileChooserParams?.acceptTypes?.joinToString()} mode=${fileChooserParams?.mode}",
                 )
@@ -619,7 +619,7 @@ class WebAppFragment : Fragment() {
                 callback: android.webkit.GeolocationPermissions.Callback?,
             ) {
                 if (isAdminApp) {
-                    Log.d(TAG, "geolocationPrompt origin=$origin -> granted (admin app)")
+                    AppLog.d(TAG, "geolocationPrompt origin=$origin -> granted (admin app)")
                     callback?.invoke(origin, true, false)
                     return
                 }
@@ -634,12 +634,12 @@ class WebAppFragment : Fragment() {
                 ) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
                 if (fineGranted || coarseGranted) {
-                    Log.d(TAG, "geolocationPrompt origin=$origin -> granted (permission already granted)")
+                    AppLog.d(TAG, "geolocationPrompt origin=$origin -> granted (permission already granted)")
                     callback?.invoke(origin, true, true)
                     return
                 }
 
-                Log.d(TAG, "geolocationPrompt origin=$origin -> requesting runtime permission")
+                AppLog.d(TAG, "geolocationPrompt origin=$origin -> requesting runtime permission")
                 pendingGeolocationCallback = callback
                 pendingGeolocationOrigin = origin
                 if (!geolocationPermissionRequestInFlight) {
@@ -678,12 +678,12 @@ class WebAppFragment : Fragment() {
             }
 
             override fun onGeolocationPermissionsHidePrompt() {
-                Log.d(TAG, "geolocationPrompt hidden")
+                AppLog.d(TAG, "geolocationPrompt hidden")
                 super.onGeolocationPermissionsHidePrompt()
             }
 
             override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
-                Log.d(
+                AppLog.d(
                     TAG,
                     "console level=${consoleMessage?.messageLevel()} line=${consoleMessage?.lineNumber()} source=${consoleMessage?.sourceId()} message=${consoleMessage?.message()}",
                 )
@@ -699,13 +699,13 @@ class WebAppFragment : Fragment() {
         val isChiefAdmin = AdminPolicy.isChiefAdminUsername(state.currentUsername)
         val isBlockedFromAdmin = AdminPolicy.isBlockedFromAdmin(state.currentUsername)
         val hasAdminAccess = state.adminCookieReady || isChiefAdmin || state.role == Role.ADMIN
-        Log.d(
+        AppLog.d(
             TAG,
             "startFlow variant=${BuildConfig.APP_VARIANT} username=${state.currentUsername} role=${state.role} passengerToken=${token != null} driverCookie=${state.driverCookieReady} adminCookie=${state.adminCookieReady} chiefAdmin=$isChiefAdmin blockedFromAdmin=$isBlockedFromAdmin hasAdminAccess=$hasAdminAccess",
         )
 
         if (!isAdminApp && !hasLocationPermission() && !geolocationPermissionRequestInFlight) {
-            Log.d(TAG, "branch=location permission preflight")
+            AppLog.d(TAG, "branch=location permission preflight")
             loadingOverlay?.visibility = View.VISIBLE
             geolocationPermissionRequestInFlight = true
             locationPermissionLauncher.launch(
@@ -728,11 +728,11 @@ class WebAppFragment : Fragment() {
                 }
                 if (currentUser == null && !isAdminApp) {
                     if (state.passengerToken.isNullOrBlank()) {
-                        Log.d(TAG, "branch=telegram handoff because passenger token is missing")
+                        AppLog.d(TAG, "branch=telegram handoff because passenger token is missing")
                         sessionRepository.logoutAll()
                         redirectToTelegramAndFinish("missing-passenger-token")
                     } else {
-                        Log.d(TAG, "branch=passenger session refresh failed but token exists, keeping session")
+                        AppLog.d(TAG, "branch=passenger session refresh failed but token exists, keeping session")
                         currentUserResolutionAttempted = true
                         startFlow()
                     }
@@ -753,14 +753,14 @@ class WebAppFragment : Fragment() {
                 .build()
                 .toString()
             val currentAdminUrl = webView?.url.orEmpty()
-            Log.d(TAG, "branch=admin launchUrl=$adminDashboardUrl currentUrl=$currentAdminUrl")
+            AppLog.d(TAG, "branch=admin launchUrl=$adminDashboardUrl currentUrl=$currentAdminUrl")
             pendingToken = null
             tokenApplied = false
             loadingOverlay?.visibility = View.VISIBLE
             viewLifecycleOwner.lifecycleScope.launch {
                 try {
                     if (!state.adminCookieReady) {
-                        Log.d(TAG, "admin bootstrap -> login with built-in key")
+                        AppLog.d(TAG, "admin bootstrap -> login with built-in key")
                         val adminKey = BuildConfig.ADMIN_KEY.trim()
                         if (adminKey.isBlank()) {
                             throw IllegalStateException("ADMIN_KEY is not configured in local.properties")
@@ -770,7 +770,7 @@ class WebAppFragment : Fragment() {
                     syncAdminCookies(targetUrl)
                     webView?.loadUrl(adminDashboardUrl)
                 } catch (err: Throwable) {
-                    Log.e(TAG, "admin bootstrap failed", err)
+                    AppLog.e(TAG, "admin bootstrap failed", err)
                     webView?.loadUrl(adminDashboardUrl)
                 }
             }
@@ -778,7 +778,7 @@ class WebAppFragment : Fragment() {
         }
 
         if (token.isNullOrBlank()) {
-            Log.d(TAG, "branch=telegram handoff")
+            AppLog.d(TAG, "branch=telegram handoff")
             loadingOverlay?.visibility = View.VISIBLE
             redirectToTelegramAndFinish("missing-token")
             return
@@ -786,13 +786,13 @@ class WebAppFragment : Fragment() {
 
         val currentUrl = webView?.url.orEmpty()
         if (!isAdminApp && currentUrl.startsWith(targetUrl)) {
-            Log.d(TAG, "branch=frontend preserve current route currentUrl=$currentUrl")
+            AppLog.d(TAG, "branch=frontend preserve current route currentUrl=$currentUrl")
             loadingOverlay?.visibility = View.GONE
             return
         }
 
         val launchUrl = buildFrontendLaunchUrl(targetUrl, token)
-        Log.d(TAG, "branch=frontend launchUrl=$launchUrl currentUrl=${webView?.url}")
+        AppLog.d(TAG, "branch=frontend launchUrl=$launchUrl currentUrl=${webView?.url}")
         if (pendingToken == token && webView?.url == launchUrl) {
             return
         }
@@ -824,7 +824,7 @@ class WebAppFragment : Fragment() {
     private fun restoreWebViewState(savedInstanceState: Bundle): Boolean {
         val state = savedInstanceState.getBundle(KEY_WEBVIEW_STATE) ?: return false
         val restored = webView?.restoreState(state) != null
-        Log.d(TAG, "restoreWebViewState restored=$restored url=${webView?.url}")
+        AppLog.d(TAG, "restoreWebViewState restored=$restored url=${webView?.url}")
         return restored
     }
 
@@ -883,7 +883,7 @@ class WebAppFragment : Fragment() {
             stateViewModel.fileChooserJustReturned = true
             return
         }
-        Log.d(TAG, "launchFileChooserWithCamera currentUrl=${webView?.url} hasCallback=${callback != null}")
+        AppLog.d(TAG, "launchFileChooserWithCamera currentUrl=${webView?.url} hasCallback=${callback != null}")
 
         val pickIntent = Intent(Intent.ACTION_GET_CONTENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
@@ -1029,7 +1029,7 @@ class WebAppFragment : Fragment() {
                 val currentPayloads = stateViewModel.pendingFileUploadPayloads ?: return@launch
                 val currentWebView = webView ?: return@launch
                 val script = buildNativeFileBridgeScript(currentPayloads)
-                Log.d(
+                AppLog.d(
                     TAG,
                     "deliverPendingNativeFileUploads attempt=${attempt + 1} count=${currentPayloads.size} names=${currentPayloads.joinToString { it.name }}",
                 )
@@ -1037,7 +1037,7 @@ class WebAppFragment : Fragment() {
                     suspendCancellableCoroutine<Boolean> { continuation ->
                         currentWebView.evaluateJavascript(script) { value ->
                             val resolved = value?.contains("true") == true
-                            Log.d(TAG, "deliverPendingNativeFileUploads result=$value success=$resolved")
+                            AppLog.d(TAG, "deliverPendingNativeFileUploads result=$value success=$resolved")
                             continuation.resume(resolved)
                         }
                     }
@@ -1048,7 +1048,7 @@ class WebAppFragment : Fragment() {
                 }
                 delay(250)
             }
-            Log.w(TAG, "deliverPendingNativeFileUploads exhausted retries without finding file input")
+            AppLog.w(TAG, "deliverPendingNativeFileUploads exhausted retries without finding file input")
         }
     }
 
@@ -1121,7 +1121,7 @@ class WebAppFragment : Fragment() {
             })();
         """.trimIndent()
 
-        Log.d(TAG, "applyPersistedPassengerTokenIfNeeded url=$currentUrl tokenSet=true")
+        AppLog.d(TAG, "applyPersistedPassengerTokenIfNeeded url=$currentUrl tokenSet=true")
         view.evaluateJavascript(js, null)
     }
 
@@ -1256,7 +1256,7 @@ class WebAppFragment : Fragment() {
             })();
         """.trimIndent()
 
-        Log.d(TAG, "applyAdminMobileOverlayFix url=$normalizedUrl")
+        AppLog.d(TAG, "applyAdminMobileOverlayFix url=$normalizedUrl")
         view.evaluateJavascript(js, null)
     }
 
@@ -1393,7 +1393,7 @@ class WebAppFragment : Fragment() {
         val webUrl = requestUrl.newBuilder().encodedPath("/").build().toString()
         val cookieManager = CookieManager.getInstance()
         val cookies = cookieStore.loadForRequest(requestUrl)
-        Log.d(TAG, "syncAdminCookies baseUrl=$baseUrl cookieCount=${cookies.size} webUrl=$webUrl")
+        AppLog.d(TAG, "syncAdminCookies baseUrl=$baseUrl cookieCount=${cookies.size} webUrl=$webUrl")
         cookies.forEach { cookie ->
             val cookieValue = buildString {
                 append(cookie.name)
@@ -1408,38 +1408,38 @@ class WebAppFragment : Fragment() {
                 if (cookie.secure) append("; Secure")
                 if (cookie.httpOnly) append("; HttpOnly")
             }
-            Log.d(TAG, "syncAdminCookies setCookie name=${cookie.name} path=${cookie.path} domain=${cookie.domain} secure=${cookie.secure} httpOnly=${cookie.httpOnly}")
+            AppLog.d(TAG, "syncAdminCookies setCookie name=${cookie.name} path=${cookie.path} domain=${cookie.domain} secure=${cookie.secure} httpOnly=${cookie.httpOnly}")
             setCookieAwait(cookieManager, webUrl, cookieValue)
             setCookieAwait(cookieManager, requestUrl.newBuilder().encodedPath("/admin").build().toString(), cookieValue)
         }
         cookieManager.flush()
-        Log.d(TAG, "syncAdminCookies flushed cookies=${cookieManager.getCookie(webUrl)}")
+        AppLog.d(TAG, "syncAdminCookies flushed cookies=${cookieManager.getCookie(webUrl)}")
     }
 
     private suspend fun setCookieAwait(cookieManager: CookieManager, url: String, cookieValue: String) {
         try {
             suspendCancellableCoroutine<Unit> { cont ->
                 cookieManager.setCookie(url, cookieValue) { success ->
-                    Log.d(TAG, "setCookie callback url=$url success=$success")
+                    AppLog.d(TAG, "setCookie callback url=$url success=$success")
                     if (cont.isActive) cont.resume(Unit)
                 }
             }
         } catch (err: Throwable) {
-            Log.e(TAG, "setCookie failed url=$url", err)
+            AppLog.e(TAG, "setCookie failed url=$url", err)
         }
     }
 
     private fun handleUrl(uri: Uri): Boolean {
         if (isTelegramUrl(uri.toString())) {
             if (isAdminApp) {
-                Log.d(TAG, "handleUrl ignoring telegram url in admin app uri=$uri")
+                AppLog.d(TAG, "handleUrl ignoring telegram url in admin app uri=$uri")
                 return true
             }
             if (sessionRepository.hasTelegramHandoffAttempted()) {
-                Log.d(TAG, "handleUrl blocking repeated telegram handoff uri=$uri")
+                AppLog.d(TAG, "handleUrl blocking repeated telegram handoff uri=$uri")
                 return true
             }
-            Log.d(TAG, "handleUrl telegram handoff uri=$uri")
+            AppLog.d(TAG, "handleUrl telegram handoff uri=$uri")
             sessionRepository.markTelegramHandoffAttempted()
             telegramOpened = true
             openTelegram()
@@ -1450,7 +1450,7 @@ class WebAppFragment : Fragment() {
             val normalized = uri.toString()
             val isAdminRoute = normalized.startsWith(targetBase) && normalized.contains("/admin")
             if (normalized.startsWith(targetBase) && !isAdminRoute) {
-                Log.d(TAG, "handleUrl forcing admin route uri=$uri")
+                AppLog.d(TAG, "handleUrl forcing admin route uri=$uri")
                 webView?.post {
                     webView?.loadUrl(buildAdminLaunchUrl(targetBase))
                 }
@@ -1482,7 +1482,7 @@ class WebAppFragment : Fragment() {
     private fun redirectToTelegramAndFinish(reason: String) {
         if (unauthorizedRedirectTriggered) return
         unauthorizedRedirectTriggered = true
-        Log.d(TAG, "redirectToTelegramAndFinish reason=$reason")
+        AppLog.d(TAG, "redirectToTelegramAndFinish reason=$reason")
         if (!isAdminApp) {
             loadingOverlay?.visibility = View.VISIBLE
         }

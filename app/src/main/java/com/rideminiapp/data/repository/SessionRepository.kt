@@ -120,6 +120,15 @@ class SessionRepository @Inject constructor(
         return response.accessToken
     }
 
+    suspend fun registerPushToken(token: String): Boolean {
+        if (token.isBlank()) return false
+        if (secureStorage.getAccessToken().isNullOrBlank()) return false
+        return runCatching {
+            bearerApi.registerPushToken(mapOf("token" to token.trim()))
+            true
+        }.getOrDefault(false)
+    }
+
     suspend fun refreshCurrentUserFromPassengerToken(): CurrentUserDto? {
         val token = secureStorage.getAccessToken() ?: return null
         AppLog.d(TAG, "refreshCurrentUserFromPassengerToken tokenSet=${token.isNotBlank()}")
