@@ -1,0 +1,6 @@
+docker exec -e PGPASSWORD=password postgres psql -U user -d lithcar -At -c "SELECT table_schema || '.' || table_name FROM information_schema.tables WHERE table_name ILIKE '%application%' ORDER BY 1;"
+docker exec -e PGPASSWORD=password postgres psql -U user -d lithcar -At -c "SELECT table_schema || '.' || table_name FROM information_schema.tables WHERE table_name ILIKE '%driver%' ORDER BY 1;"
+docker exec -e PGPASSWORD=password postgres psql -U user -d lithcar -c "\d+ public.driver_applications"
+docker exec -e PGPASSWORD=password postgres psql -U user -d lithcar -At -c "SELECT * FROM public.driver_applications ORDER BY created_at DESC LIMIT 20;"
+docker exec -e PGPASSWORD=password postgres psql -U user -d lithcar -c "DELETE FROM public.driver_applications WHERE user_id = '1341703642';"
+docker exec -e PGPASSWORD=password postgres psql -U user -d lithcar -At -c "SELECT count(*) FROM public.driver_applications WHERE user_id = '1341703642';"

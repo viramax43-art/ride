@@ -1,0 +1,9 @@
+<resources>
+    <style name="Theme.RideMiniApp" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/ride_black</item>
+        <item name="colorSecondary">@color/ride_accent</item>
+        <item name="colorTertiary">@color/ride_accent</item>
+        <item name="android:statusBarColor">@color/ride_black</item>
+        <item name="android:navigationBarColor">@color/ride_black</item>
+    </style>
+</resources>

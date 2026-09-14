@@ -1,0 +1,145 @@
+@media (max-width: 768px) {
+  html,
+  body,
+  #root,
+  .admin-sidebar-wrap,
+  .admin-sidebar-icon-rail,
+  .admin-sidebar-panel,
+  .admin-sidebar-panel > div:last-child {
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+  }
+
+  html::-webkit-scrollbar,
+  body::-webkit-scrollbar,
+  #root::-webkit-scrollbar,
+  .admin-sidebar-wrap::-webkit-scrollbar,
+  .admin-sidebar-icon-rail::-webkit-scrollbar,
+  .admin-sidebar-panel::-webkit-scrollbar,
+  .admin-sidebar-panel > div:last-child::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
+
+  .admin-drawer-scrim,
+  .admin-drawer-handle {
+    display: none !important;
+  }
+
+  .admin-sidebar-wrap {
+    position: absolute !important;
+    inset: 0 auto 0 0 !important;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: stretch !important;
+    width: 100% !important;
+    min-width: 100% !important;
+    max-width: 100% !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    overflow: hidden !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: #fff !important;
+    box-shadow: none !important;
+    direction: ltr !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    transform: none !important;
+    z-index: 2100 !important;
+  }
+
+  .admin-sidebar-wrap.admin-sidebar-collapsed {
+    display: none !important;
+    width: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+  }
+
+  .admin-sidebar-wrap:not(.admin-sidebar-collapsed) {
+    display: flex !important;
+    visibility: visible !important;
+    inset: 0 !important;
+    width: 100% !important;
+    min-width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .admin-sidebar-wrap .admin-sidebar-icon-rail {
+    order: 0 !important;
+    display: flex !important;
+    flex: 0 0 64px !important;
+    width: 64px !important;
+    min-width: 64px !important;
+    max-width: 64px !important;
+    height: 100% !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    padding: 8px 4px calc(96px + var(--app-safe-area-bottom-total, 0px)) !important;
+    border-right: 1px solid #e6e6e6 !important;
+    border-bottom: 0 !important;
+    background: #f6f6f6 !important;
+    direction: ltr !important;
+    mask-image: none !important;
+    -webkit-mask-image: none !important;
+  }
+
+  .admin-sidebar-wrap .admin-sidebar-icon-rail button {
+    flex: 0 0 auto !important;
+    width: 52px !important;
+    min-width: 52px !important;
+    min-height: 52px !important;
+  }
+
+  .admin-sidebar-wrap .admin-sidebar-panel {
+    order: 1 !important;
+    display: flex !important;
+    flex: 1 1 auto !important;
+    flex-direction: column !important;
+    width: calc(100% - 64px) !important;
+    min-width: 0 !important;
+    height: 100% !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+    background: #fff !important;
+    direction: ltr !important;
+  }
+
+  .admin-sidebar-wrap .admin-sidebar-panel > * {
+    min-width: 0 !important;
+  }
+
+  .admin-sidebar-wrap .admin-sidebar-panel > div:first-child {
+    padding-right: 64px !important;
+  }
+
+  .admin-sidebar-wrap .admin-sidebar-panel > div:last-child {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    padding-bottom: calc(160px + var(--app-safe-area-bottom-total, 0px)) !important;
+    scroll-padding-bottom: calc(160px + var(--app-safe-area-bottom-total, 0px)) !important;
+  }
+
+  .admin-sidebar-wrap > button:not(.admin-drawer-handle) {
+    position: absolute !important;
+    top: 12px !important;
+    right: 12px !important;
+    left: auto !important;
+    transform: none !important;
+    z-index: 2200 !important;
+  }
+
+  .admin-sidebar-wrap:not(.admin-sidebar-collapsed) + main .admin-map-filter-bar {
+    z-index: 900 !important;
+  }
+}

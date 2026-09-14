@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>Ride — Заказ поездок</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script>
+      (function () {
+        try {
+          var params = new URLSearchParams(window.location.search);
+          var isAdminMode = params.get('adminMode') === '1';
+          var accessToken = params.get('accessToken');
+          if (isAdminMode) {
+            ['ride_access_token', 'access_token', 'accessToken', 'token'].forEach(function (key) {
+              window.localStorage.removeItem(key);
+              window.sessionStorage.removeItem(key);
+            });
+            window.__RIDE_ADMIN_MODE__ = true;
+            return;
+          }
+          if (!accessToken) return;
+          var keys = ['ride_access_token', 'access_token', 'accessToken', 'token'];
+          keys.forEach(function (key) {
+            window.localStorage.setItem(key, accessToken);
+            window.sessionStorage.setItem(key, accessToken);
+          });
+          window.__RIDE_ACCESS_TOKEN__ = accessToken;
+        } catch (error) {}
+      })();
+    </script>    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <script>
+      (function () {
+        try {
+          var key = 'lithcar:language';
+          var migratedKey = 'lithcar:language_migrated_to_ru_v1';
+          var current = window.localStorage.getItem(key);
+          if (current === 'lt' && !window.localStorage.getItem(migratedKey)) {
+            window.localStorage.setItem(key, 'ru');
+            window.localStorage.setItem(migratedKey, '1');
+            return;
+          }
+          if (!current) {
+            window.localStorage.setItem(key, 'ru');
+          }
+        } catch (error) {}
+      })();
+    </script>
+    <script>
+      (function () {
+        try {
+          if (window.__RIDE_ADMIN_MODE__) {
+            return;
+          }
+          var accessToken = window.localStorage.getItem('ride_access_token');
+          var telegramWebApp = window.Telegram && window.Telegram.WebApp;
+          var telegramInitData = (telegramWebApp && telegramWebApp.initData) || '';
+          var telegramWebViewData =
+            window.Telegram &&
+            window.Telegram.WebView &&
+            window.Telegram.WebView.initParams &&
+            window.Telegram.WebView.initParams.tgWebAppData;
+          if (!accessToken && !telegramInitData && !telegramWebViewData) {
+            window.location.replace('tg://resolve?domain=rideminiapp_bot&start=auth');
+          }
+        } catch (error) {}
+      })();
+    </script>
+    <script>
+      (function () {
+        var TELEGRAM_HANDOFF_URL = 'tg://resolve?domain=rideminiapp_bot&start=auth';
+        var TELEGRAM_WEB_URL = 'https://t.me/rideminiapp_bot?start=auth';
+        var APP_BUNDLE_SRC = '/assets/index-user-camera-one-tap-fix.js?v=20260729k';
+
+        function redirectToTelegram() {
+          try {
+            window.location.replace(TELEGRAM_HANDOFF_URL);
+          } catch (error) {
+            try {
+              window.location.replace(TELEGRAM_WEB_URL);
+            } catch (fallbackError) {
+              window.location.href = TELEGRAM_WEB_URL;
+            }
+          }
+        }
+
+        function getTelegramContext() {
+          try {
+            var telegramWebApp = window.Telegram && window.Telegram.WebApp;
+            var telegramInitData = (telegramWebApp && telegramWebApp.initData) || '';
+            var telegramWebViewData =
+              window.Telegram &&
+              window.Telegram.WebView &&
+              window.Telegram.WebView.initParams &&
+              window.Telegram.WebView.initParams.tgWebAppData;
+            return {
+              initData: telegramInitData || telegramWebViewData || '',
+            };
+          } catch (error) {
+            return { initData: '' };
+          }
+        }
+
+        function getStoredAccessToken() {
+          try {
+            return window.localStorage.getItem('ride_access_token') || '';
+          } catch (error) {
+            return '';
+          }
+        }
+
+        function loadBundle() {
+          var attach = function () {
+            var script = document.createElement('script');
+            script.type = 'module';
+            script.crossOrigin = 'anonymous';
+            script.src = APP_BUNDLE_SRC;
+            document.head.appendChild(script);
+          };
+
+          if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', attach, { once: true });
+            return;
+          }
+
+          attach();
+        }
+
+        (async function () {
+          try {
+            if (window.__RIDE_ADMIN_MODE__) {
+              loadBundle();
+              return;
+            }
+            var telegramContext = getTelegramContext();
+            var accessToken = getStoredAccessToken();
+
+            if (!telegramContext.initData && !accessToken) {
+              redirectToTelegram();
+              return;
+            }
+
+            loadBundle();
+          } catch (error) {
+            redirectToTelegram();
+          }
+        })();
+      })();
+    </script>
+    <link rel="stylesheet" crossorigin href="/assets/main-DOZKgeUy.css?v=20260729k">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

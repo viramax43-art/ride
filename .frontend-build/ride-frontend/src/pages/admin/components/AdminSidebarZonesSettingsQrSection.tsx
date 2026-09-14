@@ -1,0 +1,591 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ArrowCounterClockwise, MagnifyingGlass, X } from '@phosphor-icons/react'
+
+import { getInitialZonesSettingsUi } from '../../../lib/adminUiState'
+import { usePersistAdminUiSlice } from '../../../lib/useAdminUiPersistence'
+import { useTranslation } from 'react-i18next'
+
+import { SUPPORTED_LANGUAGES } from '../../../i18n/languages'
+import { normalizeUserInfoText, userInfoTextEqual, type UserInfoTextI18n } from '../../../lib/userInfoText'
+import { ZONE_COLORS } from '../constants'
+import { AdminDynamicPricingSection } from './AdminDynamicPricingSection'
+import InlineConfirm from './InlineConfirm'
+import { inputCls } from './AdminSidebarShared'
+import Skeleton from '../../../components/Skeleton'
+import { formatDate, formatTime } from '../../../i18n/dateTime'
+import { normalizeHexColor } from '../../../utils/serviceZones'
+import type { ServiceZone } from '../../../types'
+import type { AdminSidebarProps } from './AdminSidebar.types'
+import { AdminNotificationsSection } from './AdminNotificationsSection'
+import { useAutoTranslatedText } from '../../../lib/useAutoTranslatedText'
+import ClearableNumberInput from './ClearableNumberInput'
+
+type ZonesSettingsQrSectionProps = Pick<
+  AdminSidebarProps,
+  | 'activeTab'
+  | 'isDrawing'
+  | 'setIsDrawing'
+  | 'newZoneName'
+  | 'setNewZoneName'
+  | 'newZoneColor'
+  | 'setNewZoneColor'
+  | 'drawingPoints'
+  | 'setDrawingPoints'
+  | 'handleCreateZone'
+  | 'serviceZones'
+  | 'selectedZoneId'
+  | 'setSelectedZoneId'
+  | 'onShowZoneOnMap'
+  | 'handleToggleZone'
+  | 'handleDeleteZone'
+  | 'pricing'
+  | 'handlePricingChange'
+  | 'qrSales'
+  | 'hasLoadedQrSalesOnce'
+  | 'adminSession'
+>
+
+export function AdminSidebarZonesSettingsQrSection({
+  activeTab,
+  isDrawing,
+  setIsDrawing,
+  newZoneName,
+  setNewZoneName,
+  newZoneColor,
+  setNewZoneColor,
+  drawingPoints,
+  setDrawingPoints,
+  handleCreateZone,
+  serviceZones,
+  selectedZoneId,
+  setSelectedZoneId,
+  onShowZoneOnMap,
+  handleToggleZone,
+  handleDeleteZone,
+  pricing,
+  handlePricingChange,
+  qrSales,
+  hasLoadedQrSalesOnce,
+  adminSession,
+}: ZonesSettingsQrSectionProps) {
+  const { t } = useTranslation()
+  const initialZonesSettingsUi = getInitialZonesSettingsUi()
+  const initialMainDraft =
+    (initialZonesSettingsUi.userInfoMainDraft as UserInfoTextI18n | null) ??
+    normalizeUserInfoText(pricing.userInfoText)
+  const initialProfileDraft =
+    (initialZonesSettingsUi.userInfoProfileDraft as UserInfoTextI18n | null) ??
+    normalizeUserInfoText(pricing.userInfoTextProfile)
+  const skipMainSyncRef = useRef(initialZonesSettingsUi.userInfoMainDraft !== null)
+  const skipProfileSyncRef = useRef(initialZonesSettingsUi.userInfoProfileDraft !== null)
+  const mainDirtyRef = useRef(
+    initialZonesSettingsUi.userInfoMainDraft !== null
+    && !userInfoTextEqual(initialMainDraft, normalizeUserInfoText(pricing.userInfoText)),
+  )
+  const profileDirtyRef = useRef(
+    initialZonesSettingsUi.userInfoProfileDraft !== null
+    && !userInfoTextEqual(initialProfileDraft, normalizeUserInfoText(pricing.userInfoTextProfile)),
+  )
+  const [isCreatingZone, setIsCreatingZone] = useState(false)
+  const [isSavingUserInfo, setIsSavingUserInfo] = useState(false)
+  const [zonesSearchQuery, setZonesSearchQuery] = useState('')
+  const [userInfoMainDraft, setUserInfoMainDraft] = useState<UserInfoTextI18n>(() => initialMainDraft)
+  const [userInfoProfileDraft, setUserInfoProfileDraft] = useState<UserInfoTextI18n>(() => initialProfileDraft)
+  const updateTranslatedMainInfo = useAutoTranslatedText(setUserInfoMainDraft)
+  const updateTranslatedProfileInfo = useAutoTranslatedText(setUserInfoProfileDraft)
+
+  const zonesSettingsUiPersistence = useMemo(
+    () => ({
+      userInfoMainDraft,
+      userInfoProfileDraft,
+    }),
+    [userInfoMainDraft, userInfoProfileDraft],
+  )
+  usePersistAdminUiSlice('zonesSettings', zonesSettingsUiPersistence)
+
+  useEffect(() => {
+    if (skipMainSyncRef.current) {
+      skipMainSyncRef.current = false
+      return
+    }
+    if (mainDirtyRef.current) return
+    setUserInfoMainDraft(normalizeUserInfoText(pricing.userInfoText))
+  }, [pricing.userInfoText])
+
+  useEffect(() => {
+    if (skipProfileSyncRef.current) {
+      skipProfileSyncRef.current = false
+      return
+    }
+    if (profileDirtyRef.current) return
+    setUserInfoProfileDraft(normalizeUserInfoText(pricing.userInfoTextProfile))
+  }, [pricing.userInfoTextProfile])
+
+  const zoneCardRefs = useRef<Record<string, HTMLDivElement | null>>({})
+
+  const filteredZones = useMemo(() => {
+    const q = zonesSearchQuery.trim().toLowerCase()
+    if (!q) return serviceZones
+    const matched = serviceZones.filter((zone) => zone.name.toLowerCase().includes(q))
+    if (!selectedZoneId) return matched
+    if (matched.some((zone) => zone.id === selectedZoneId)) return matched
+    const selected = serviceZones.find((zone) => zone.id === selectedZoneId)
+    return selected ? [selected, ...matched] : matched
+  }, [serviceZones, zonesSearchQuery, selectedZoneId])
+
+  useEffect(() => {
+    if (activeTab !== 'zones' || !selectedZoneId) return
+    const element = zoneCardRefs.current[selectedZoneId]
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }, [activeTab, selectedZoneId])
+
+  if (activeTab === 'zones') {
+    return (
+      <div className="space-y-3">
+        {isDrawing && (
+          <div className="rounded-card border-[1.5px] border-black p-4 space-y-3 bg-surface/50">
+            <p className="text-sm font-bold">{t('admin.zones.newZone')}</p>
+            <input
+              value={newZoneName}
+              onChange={(event) => setNewZoneName(event.target.value)}
+              placeholder={t('admin.zones.zoneNamePlaceholder')}
+              className={inputCls}
+            />
+            <ZoneColorPicker color={newZoneColor} onChange={setNewZoneColor} presetsOnly />
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted">{t('admin.zones.mapPoints')}</span>
+              <span className="font-bold">{drawingPoints.length}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setDrawingPoints((prev) => prev.slice(0, -1))}
+                disabled={drawingPoints.length === 0}
+                className="inline-flex items-center justify-center gap-2 py-3 rounded-xl border border-border bg-white text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.97] hover:bg-surface"
+                title={t('admin.zones.undoPoint')}
+              >
+                <ArrowCounterClockwise size={16} weight="bold" />
+                {t('common.cancel')}
+              </button>
+              <button
+                onClick={() => {
+                  if (isCreatingZone) return
+                  setIsCreatingZone(true)
+                  void handleCreateZone().finally(() => setIsCreatingZone(false))
+                }}
+                disabled={drawingPoints.length < 3 || !newZoneName.trim() || isCreatingZone}
+                className="py-3 bg-black text-white rounded-xl text-sm font-bold disabled:opacity-50 transition-all hover:bg-zinc-800 active:scale-[0.97]"
+              >
+                {isCreatingZone ? t('common.saving') : t('common.save')}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {!isDrawing && serviceZones.length > 0 && (
+          <div className="relative">
+            <MagnifyingGlass size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+            <input
+              value={zonesSearchQuery}
+              onChange={(event) => setZonesSearchQuery(event.target.value)}
+              placeholder={t('admin.zones.searchPlaceholder', { defaultValue: 'Search zones by name...' })}
+              className="w-full pl-9 pr-9 py-2.5 rounded-xl border-[1.5px] border-border bg-surface text-sm outline-none focus:border-black focus:bg-white transition-colors"
+            />
+            {zonesSearchQuery && (
+              <button
+                type="button"
+                onClick={() => setZonesSearchQuery('')}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center hover:bg-border rounded-lg transition-colors touch-none"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        )}
+
+        {filteredZones.map((zone) => {
+          const selected = selectedZoneId === zone.id
+          return (
+            <div
+              key={zone.id}
+              ref={(element) => {
+                zoneCardRefs.current[zone.id] = element
+              }}
+              className={`rounded-card border-[1.5px] overflow-hidden transition-all ${
+                selected ? 'border-black' : 'border-border'
+              }`}
+            >
+              <button
+                onClick={() => setSelectedZoneId(selected ? null : zone.id)}
+                className="w-full p-3.5 text-left hover:bg-surface/60 transition-colors"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: zone.color }} />
+                  <span className="text-sm font-bold flex-1 truncate">{zone.name}</span>
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-pill flex-shrink-0 ${
+                      zone.isActive ? 'bg-accent/15 text-accent-dark' : 'bg-surface text-muted'
+                    }`}
+                  >
+                    {zone.isActive ? t('common.active') : t('common.inactive')}
+                  </span>
+                </div>
+              </button>
+              {selected && (
+                <ZoneActionsPanel
+                  zone={zone}
+                  onShowOnMap={() => onShowZoneOnMap(zone.id)}
+                  onToggle={() => void handleToggleZone(zone)}
+                  onDelete={() => void handleDeleteZone(zone.id)}
+                />
+              )}
+            </div>
+          )
+        })}
+
+        {serviceZones.length === 0 && !isDrawing && (
+          <p className="text-xs text-muted text-center py-12">{t('admin.zones.empty')}</p>
+        )}
+        {serviceZones.length > 0 && filteredZones.length === 0 && (
+          <p className="text-xs text-muted text-center py-8">
+            {t('admin.zones.searchEmpty', { defaultValue: 'No zones match your search.' })}
+          </p>
+        )}
+      </div>
+    )
+  }
+
+  if (activeTab === 'settings') {
+    const displayRideEur =
+      pricing.pricingMode === 'dynamic'
+        ? t('admin.settings.byRoute')
+        : `€${((pricing.pointsPerRide * pricing.pointPriceCents) / 100).toFixed(2)}`
+
+    const canManageInfoBlocks = adminSession.role === 'chief_admin' || adminSession.role === 'admin'
+
+    return (
+      <div className="space-y-4">
+        <AdminNotificationsSection canManage={canManageInfoBlocks} />
+        <AdminDynamicPricingSection pricing={pricing} onPricingChange={handlePricingChange} />
+
+        <div className="rounded-card border-[1.5px] border-border p-4 space-y-3">
+          <div>
+            <label className="block text-sm font-bold mb-1">{t('admin.settings.pointPrice')}</label>
+            <p className="text-[11px] text-muted mb-2">{t('admin.settings.pointPriceHint')}</p>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted">€</span>
+              <ClearableNumberInput
+                inputMode="decimal"
+                min={0.01}
+                step={0.01}
+                value={pricing.pointPriceCents / 100}
+                onValueChange={(euro) => void handlePricingChange({ pointPriceCents: Math.round(euro * 100) })}
+                className={`${inputCls} pl-7`}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-card border-[1.5px] border-border p-4 space-y-3">
+          <p className="text-sm font-bold">{t('admin.settings.userInfo')}</p>
+          <p className="text-[11px] text-muted">{t('admin.settings.userInfoHint')}</p>
+          <div className="space-y-4">
+            <div className="rounded-xl border border-border p-3 space-y-3">
+              <p className="text-xs font-bold">{t('admin.settings.userInfoMain', { defaultValue: 'Main screen info' })}</p>
+              <p className="text-[11px] text-muted">{t('admin.settings.userInfoMainHint', { defaultValue: 'Shown on the main passenger screen.' })}</p>
+              {SUPPORTED_LANGUAGES.map((lang) => (
+                <div key={`main-${lang}`} className="space-y-1.5">
+                  <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider">
+                    {t(`language.${lang}`)}
+                  </label>
+                  <textarea
+                    value={userInfoMainDraft[lang]}
+                    onChange={(event) => {
+                      mainDirtyRef.current = true
+                      updateTranslatedMainInfo(lang, event.target.value)
+                    }}
+                    rows={3}
+                    placeholder={t(`admin.settings.userInfoPlaceholder.${lang}`)}
+                    className={`${inputCls} resize-y min-h-[72px]`}
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="rounded-xl border border-border p-3 space-y-3">
+              <p className="text-xs font-bold">{t('admin.settings.userInfoProfile', { defaultValue: 'Profile screen info' })}</p>
+              <p className="text-[11px] text-muted">{t('admin.settings.userInfoProfileHint', { defaultValue: 'Shown in passenger profile.' })}</p>
+              {SUPPORTED_LANGUAGES.map((lang) => (
+                <div key={`profile-${lang}`} className="space-y-1.5">
+                  <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider">
+                    {t(`language.${lang}`)}
+                  </label>
+                  <textarea
+                    value={userInfoProfileDraft[lang]}
+                    onChange={(event) => {
+                      profileDirtyRef.current = true
+                      updateTranslatedProfileInfo(lang, event.target.value)
+                    }}
+                    rows={3}
+                    placeholder={t(`admin.settings.userInfoPlaceholder.${lang}`)}
+                    className={`${inputCls} resize-y min-h-[72px]`}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center justify-end gap-3">
+            <button
+              onClick={() => {
+                if (isSavingUserInfo) return
+                setIsSavingUserInfo(true)
+                void handlePricingChange({
+                  userInfoText: normalizeUserInfoText(userInfoMainDraft),
+                  userInfoTextProfile: normalizeUserInfoText(userInfoProfileDraft),
+                })
+                  .then((saved) => {
+                    if (!saved) return
+                    mainDirtyRef.current = false
+                    profileDirtyRef.current = false
+                  })
+                  .finally(() => setIsSavingUserInfo(false))
+              }}
+              disabled={
+                isSavingUserInfo
+                || (
+                  userInfoTextEqual(userInfoMainDraft, normalizeUserInfoText(pricing.userInfoText))
+                  && userInfoTextEqual(userInfoProfileDraft, normalizeUserInfoText(pricing.userInfoTextProfile))
+                )
+              }
+              className="px-3 py-2 rounded-xl bg-black text-white text-xs font-bold disabled:opacity-50 transition-all active:scale-[0.97]"
+            >
+              {isSavingUserInfo ? t('common.saving') : t('common.save')}
+            </button>
+          </div>
+        </div>
+
+        <div className="rounded-card border-[1.5px] border-border p-4 space-y-3">
+          <div>
+            <label className="block text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">
+              {t('admin.settings.slotInterval')}
+            </label>
+            <select
+              value={pricing.slotIntervalMinutes}
+              onChange={(event) => void handlePricingChange({ slotIntervalMinutes: parseInt(event.target.value, 10) })}
+              className={inputCls}
+            >
+              {[15, 30, 45, 60].map((v) => (
+                <option key={v} value={v}>
+                  {t('admin.settings.slotIntervalOption', { value: v })}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="rounded-card bg-black text-white p-5 space-y-3">
+          <p className="text-xs font-semibold text-white/60 uppercase tracking-wider">
+            {t('admin.settings.currentSystem')}
+          </p>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-white/70">{t('admin.settings.onePoint')}</span>
+            <span className="font-semibold">€{(pricing.pointPriceCents / 100).toFixed(2)}</span>
+          </div>
+          <div className="h-px bg-white/15" />
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-white/70">
+              {pricing.pricingMode === 'dynamic'
+                ? t('admin.settings.ridePrice')
+                : t('admin.settings.approxEur')}
+            </span>
+            <span className="text-2xl font-extrabold text-accent">{displayRideEur}</span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (activeTab !== 'qrSales') {
+    return null
+  }
+
+  if (!hasLoadedQrSalesOnce) {
+    return (
+      <div className="space-y-3">
+        <div className="rounded-card bg-black/95 p-4 flex items-center justify-between">
+          <div className="space-y-2">
+            <Skeleton width={100} height={10} className="!bg-white/15" />
+            <Skeleton width={120} height={24} className="!bg-white/15" />
+          </div>
+          <div className="space-y-2 items-end flex flex-col">
+            <Skeleton width={110} height={10} className="!bg-white/15" />
+            <Skeleton width={80} height={18} className="!bg-white/15" />
+          </div>
+        </div>
+        {[0, 1, 2].map((index) => (
+          <div key={index} className="rounded-card border-[1.5px] border-border p-3.5 bg-white space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-2 min-w-0 flex-1">
+                <Skeleton width="55%" height={14} />
+                <Skeleton width="35%" height={11} />
+              </div>
+              <Skeleton width={72} height={18} />
+            </div>
+            <div className="flex items-center justify-between gap-3 pt-2 border-t border-border">
+              <Skeleton width="45%" height={11} />
+              <Skeleton width={84} height={11} />
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  const totalEur = qrSales.reduce((sum, sale) => sum + sale.eurAmount, 0)
+  const totalPoints = qrSales.reduce((sum, sale) => sum + sale.pointsAmount, 0)
+
+  return (
+    <div className="space-y-3">
+      {qrSales.length > 0 && (
+        <div className="rounded-card bg-black text-white p-4 flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-white/60">
+              {t('admin.qrSales.totalReceived')}
+            </p>
+            <p className="text-2xl font-extrabold mt-0.5">€{totalEur.toFixed(2)}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-white/60">
+              {t('admin.qrSales.pointsIssued')}
+            </p>
+            <p className="text-lg font-bold mt-0.5">{totalPoints} pts</p>
+          </div>
+        </div>
+      )}
+
+      {qrSales.map((sale) => {
+        const passengerLabel = sale.username?.trim() || t('passenger.passengerLabel')
+        const driverFallback = t('admin.qrSales.driverLabel').replace(/:\s*$/, '')
+        const driverLabel = sale.driverName?.trim() || driverFallback
+        const when = sale.redeemedAt ? formatPaymentDate(sale.redeemedAt) : null
+
+        return (
+          <div key={sale.saleId} className="rounded-card border-[1.5px] border-border p-3.5 bg-white space-y-2">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-bold truncate">{passengerLabel}</p>
+                <p className="text-[11px] text-muted mt-0.5">
+                  {t('admin.qrSales.boughtPoints', { count: sale.pointsAmount })}
+                </p>
+              </div>
+              <p className="text-base font-extrabold whitespace-nowrap">€{sale.eurAmount.toFixed(2)}</p>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 pt-2 border-t border-border">
+              <p className="text-[11px] text-muted truncate">
+                <span className="text-muted">{t('admin.qrSales.driverLabel')} </span>
+                <span className="font-semibold text-black/80">{driverLabel}</span>
+              </p>
+              {when && <p className="text-[11px] text-muted whitespace-nowrap">{when}</p>}
+            </div>
+          </div>
+        )
+      })}
+
+      {qrSales.length === 0 && (
+        <p className="text-xs text-muted text-center py-12">{t('admin.qrSales.empty')}</p>
+      )}
+    </div>
+  )
+}
+
+function ZoneColorPicker({
+  color,
+  onChange,
+  presetsOnly = false,
+}: {
+  color: string
+  onChange: (value: string) => void
+  presetsOnly?: boolean
+}) {
+  const { t } = useTranslation()
+  return (
+    <div className="space-y-2">
+      <p className="text-[10px] font-semibold text-muted uppercase tracking-wider">
+        {t('admin.zones.color')}
+      </p>
+      <div className="flex gap-2 flex-wrap">
+        {ZONE_COLORS.map((preset) => (
+          <button
+            key={preset}
+            type="button"
+            onClick={() => onChange(preset)}
+            className={`w-9 h-9 touch-none rounded-full transition-transform ${
+              color.toUpperCase() === preset.toUpperCase() ? 'ring-2 ring-black ring-offset-2 scale-110' : ''
+            }`}
+            style={{ background: preset }}
+          />
+        ))}
+      </div>
+      {!presetsOnly && (
+        <input
+          value={color}
+          onChange={(event) => onChange(normalizeHexColor(event.target.value, color))}
+          placeholder="#3B82F6"
+          className={`${inputCls} font-mono text-sm`}
+        />
+      )}
+    </div>
+  )
+}
+
+function ZoneActionsPanel({
+  zone,
+  onShowOnMap,
+  onToggle,
+  onDelete,
+}: {
+  zone: ServiceZone
+  onShowOnMap: () => void
+  onToggle: () => void
+  onDelete: () => void
+}) {
+  const { t } = useTranslation()
+
+  return (
+    <div className="px-3.5 pb-3.5 border-t border-border pt-3 space-y-2">
+      <button
+        type="button"
+        onClick={onShowOnMap}
+        className="w-full py-2 rounded-xl bg-black text-white text-xs font-bold transition-all active:scale-[0.97]"
+      >
+        {t('common.showOnMap')}
+      </button>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex-1 py-2 rounded-xl bg-surface text-xs font-semibold hover:bg-border transition-colors"
+        >
+          {zone.isActive ? t('common.disable') : t('common.enable')}
+        </button>
+        <InlineConfirm
+          label={t('common.delete')}
+          confirmLabel={t('common.confirmDelete')}
+          onConfirm={onDelete}
+          className="flex-1 !text-xs !py-2"
+        />
+      </div>
+    </div>
+  )
+}
+
+function formatPaymentDate(iso: string): string {
+  const date = new Date(iso)
+  const now = new Date()
+  const sameYear = date.getFullYear() === now.getFullYear()
+  const datePart = formatDate(date, sameYear ? { day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', year: 'numeric' })
+  const timePart = formatTime(date, { hour: '2-digit', minute: '2-digit' })
+  return `${datePart}, ${timePart}`
+}

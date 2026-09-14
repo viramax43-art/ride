@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>Ride — Заказ поездок</title>
+    <script>
+      (function () {
+        try {
+          var nativeMode = new URLSearchParams(window.location.search).has('native');
+          window.__RIDE_NATIVE_WEBVIEW__ = nativeMode;
+          document.write('<script src="https://telegram.org/js/telegram-web-app.js"><\\/script>');
+        } catch (error) {}
+      })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" crossorigin href="/assets/index-J7mSGZIo.css?v=20260727c" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      (function () {
+        try {
+          var key = 'lithcar:language';
+          var migratedKey = 'lithcar:language_migrated_to_ru_v1';
+          var current = window.localStorage.getItem(key);
+          if (current === 'lt' && !window.localStorage.getItem(migratedKey)) {
+            window.localStorage.setItem(key, 'ru');
+            window.localStorage.setItem(migratedKey, '1');
+            return;
+          }
+          if (!current) {
+            window.localStorage.setItem(key, 'ru');
+          }
+        } catch (error) {}
+      })();
+    </script>
+    <script>
+      (function () {
+        try {
+          var accessToken = window.localStorage.getItem('ride_access_token');
+          var queryAccessToken = new URLSearchParams(window.location.search).get('accessToken') || '';
+          var telegramWebApp = window.Telegram && window.Telegram.WebApp;
+          var telegramInitData = (telegramWebApp && telegramWebApp.initData) || '';
+          var telegramWebViewData =
+            window.Telegram &&
+            window.Telegram.WebView &&
+            window.Telegram.WebView.initParams &&
+            window.Telegram.WebView.initParams.tgWebAppData;
+          if (!accessToken && !queryAccessToken && !telegramInitData && !telegramWebViewData) {
+            window.location.replace('tg://resolve?domain=rideminiapp_bot&start=auth');
+          }
+        } catch (error) {}
+      })();
+    </script>
+    <script>
+      (function () {
+        var TELEGRAM_HANDOFF_URL = 'tg://resolve?domain=rideminiapp_bot&start=auth';
+        var TELEGRAM_WEB_URL = 'https://t.me/rideminiapp_bot?start=auth';
+        var APP_ENTRY_SRC = '/src/main.tsx';
+
+        function redirectToTelegram() {
+          try {
+            window.location.replace(TELEGRAM_HANDOFF_URL);
+          } catch (error) {
+            try {
+              window.location.replace(TELEGRAM_WEB_URL);
+            } catch (fallbackError) {
+              window.location.href = TELEGRAM_WEB_URL;
+            }
+          }
+        }
+
+        function getTelegramContext() {
+          try {
+            var telegramWebApp = window.Telegram && window.Telegram.WebApp;
+            var telegramInitData = (telegramWebApp && telegramWebApp.initData) || '';
+            var telegramWebViewData =
+              window.Telegram &&
+              window.Telegram.WebView &&
+              window.Telegram.WebView.initParams &&
+              window.Telegram.WebView.initParams.tgWebAppData;
+            return {
+              initData: telegramInitData || telegramWebViewData || '',
+            };
+          } catch (error) {
+            return { initData: '' };
+          }
+        }
+
+        function getStoredAccessToken() {
+          try {
+            return window.localStorage.getItem('ride_access_token') || '';
+          } catch (error) {
+            return '';
+          }
+        }
+
+        function loadEntry() {
+          var attach = function () {
+            var script = document.createElement('script');
+            script.type = 'module';
+            script.src = APP_ENTRY_SRC;
+            document.head.appendChild(script);
+          };
+
+          if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', attach, { once: true });
+            return;
+          }
+
+          attach();
+        }
+
+        async function verifyUserSession(accessToken) {
+          var response = await fetch('/api/users/me', {
+            headers: {
+              Authorization: 'Bearer ' + accessToken,
+            },
+          });
+
+          if (!response.ok) {
+            throw new Error('user-session-invalid');
+          }
+        }
+
+        (async function () {
+          try {
+            var telegramContext = getTelegramContext();
+            var accessToken = getStoredAccessToken();
+
+            if (!telegramContext.initData && !accessToken) {
+              redirectToTelegram();
+              return;
+            }
+
+            if (accessToken) {
+              try {
+                await verifyUserSession(accessToken);
+              } catch (error) {
+                try {
+                  window.localStorage.removeItem('ride_access_token');
+                } catch (removeError) {}
+                redirectToTelegram();
+                return;
+              }
+            }
+
+            loadEntry();
+          } catch (error) {
+            redirectToTelegram();
+          }
+        })();
+      })();
+    </script>
+  </body>
+</html>

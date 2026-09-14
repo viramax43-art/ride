@@ -1,0 +1,7 @@
+<resources>
+    <color name="ride_black">#111111</color>
+    <color name="ride_white">#FFFFFF</color>
+    <color name="ride_surface">#F4F2ED</color>
+    <color name="ride_accent">#D6A55F</color>
+    <color name="ride_muted">#6B6B6B</color>
+</resources>

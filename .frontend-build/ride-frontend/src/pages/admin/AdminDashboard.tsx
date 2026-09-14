@@ -1,0 +1,975 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+
+import { DEFAULT_DRIVER_REGISTRATION_FORM } from '../../lib/driverRegistrationDefaults'
+import { DEFAULT_PRICING_SETTINGS } from '../../lib/pricingDefaults'
+import type { AppNotification, Driver, DriverApplication, DriverRegistrationFormSchema, GroupSuggestion, LatLng, PricingSettings, RideRequest, ServiceZone } from '../../types'
+import {
+  adjustAdminPassengerPoints,
+  approveDriverApplication,
+  assignDriverBulk,
+  createAdminKey,
+  createDriver,
+  deleteDriver,
+  deleteAdminKey,
+  createServiceZone,
+  deleteServiceZone,
+  getAdminSession,
+  getDriverRegistrationSettings,
+  getPricing,
+  listAdminRequests,
+  listAdminKeys,
+  listAdminPassengers,
+  listDriverApplications,
+  listDrivers,
+  listAdminQrSales,
+  listServiceZones,
+  logoutAdminSession,
+  patchAdminRideRoute,
+  rejectDriverApplication,
+  rotateAdminKey,
+  rotateDriverKey,
+  uploadDriverPhoto,
+  updateAdminKey,
+  updateDriver,
+  updateDriverRegistrationSettings,
+  updatePricing,
+  updateServiceZone,
+  unassignAdminDriver,
+  type AdminKeyInfo,
+  type AdminPassenger,
+  type AdminSessionUser,
+} from '../../lib/backend'
+import { AdminAssignDriverModal } from './components/AdminAssignDriverModal'
+import { isOverridden, toRideDraft, type RideDraft } from './components/AssignDriverModalParts'
+import AdminMap from './components/AdminMap'
+import AdminModalShell from './components/AdminModalShell'
+import AdminSidebar from './components/AdminSidebar'
+import { AdminErrorToast, AdminHeader } from './components/AdminDashboardViews'
+import { getInitialDashboardUi, getInitialDriverRegistrationUi } from '../../lib/adminUiState'
+import { usePersistAdminUiSlice } from '../../lib/useAdminUiPersistence'
+import { buildSimpleZoneBoundary } from '../../lib/zoneGeometry'
+import { GROUP_COLORS, type AdminTab, type MapColorGroupKey } from './constants'
+
+const ADMIN_DASHBOARD_POLL_MS = 10_000
+const TELEGRAM_HANDOFF_URL = 'tg://resolve?domain=rideminiapp_bot&start=auth'
+const TELEGRAM_WEB_URL = 'https://t.me/rideminiapp_bot?start=auth'
+const ADMIN_TELEGRAM_HANDOFF_KEY = 'ride_admin_tg_handoff_ts'
+const ADMIN_TELEGRAM_HANDOFF_TTL_MS = 5 * 60 * 1000
+const INITIAL_DASHBOARD_UI = getInitialDashboardUi()
+const FALLBACK_ADMIN_SESSION: AdminSessionUser = {
+  role: 'chief_admin',
+  name: 'Admin',
+}
+
+function getStoredTelegramHandoffTs() {
+  if (typeof window === 'undefined') return 0
+  try {
+    return Number(window.sessionStorage.getItem(ADMIN_TELEGRAM_HANDOFF_KEY) || '0')
+  } catch {
+    return 0
+  }
+}
+
+function hasRecentTelegramHandoff() {
+  const handoffTs = getStoredTelegramHandoffTs()
+  return Number.isFinite(handoffTs) && Date.now() - handoffTs < ADMIN_TELEGRAM_HANDOFF_TTL_MS
+}
+
+function markTelegramHandoff() {
+  if (typeof window === 'undefined') return
+  try {
+    window.sessionStorage.setItem(ADMIN_TELEGRAM_HANDOFF_KEY, String(Date.now()))
+  } catch {
+    // Ignore storage failures and keep going.
+  }
+}
+
+function clearTelegramHandoff() {
+  if (typeof window === 'undefined') return
+  try {
+    window.sessionStorage.removeItem(ADMIN_TELEGRAM_HANDOFF_KEY)
+  } catch {
+    // Ignore storage failures and keep going.
+  }
+}
+
+function redirectToTelegram() {
+  if (typeof window === 'undefined') return
+  markTelegramHandoff()
+  try {
+    window.location.replace(TELEGRAM_HANDOFF_URL)
+  } catch {
+    try {
+      markTelegramHandoff()
+      window.location.replace(TELEGRAM_WEB_URL)
+    } catch {
+      window.location.href = TELEGRAM_WEB_URL
+    }
+  }
+}
+
+export default function AdminDashboard() {
+  const { t } = useTranslation()
+  const [activeTab, setActiveTab] = useState<AdminTab>(INITIAL_DASHBOARD_UI.activeTab)
+  const [requests, setRequests] = useState<RideRequest[]>([])
+  const [drivers, setDrivers] = useState<Driver[]>([])
+  const [passengers, setPassengers] = useState<AdminPassenger[]>([])
+  const [passengersTotal, setPassengersTotal] = useState(0)
+  const [isLoadingMorePassengers, setIsLoadingMorePassengers] = useState(false)
+  const [suggestions, setSuggestions] = useState<GroupSuggestion[]>([])
+  const [serviceZones, setServiceZones] = useState<ServiceZone[]>([])
+  const [pricing, setPricing] = useState<PricingSettings>(DEFAULT_PRICING_SETTINGS)
+  const [qrSales, setQrSales] = useState<Awaited<ReturnType<typeof listAdminQrSales>>['items']>([])
+  const [hasLoadedQrSalesOnce, setHasLoadedQrSalesOnce] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [adminSession, setAdminSession] = useState<AdminSessionUser>(FALLBACK_ADMIN_SESSION)
+  const [isInitialAdminCheckDone, setIsInitialAdminCheckDone] = useState(false)
+  const [isWaitingForTelegramAuth, setIsWaitingForTelegramAuth] = useState(false)
+  const [managedAdminKeys, setManagedAdminKeys] = useState<AdminKeyInfo[]>([])
+  const [newManagedKeyName, setNewManagedKeyName] = useState(INITIAL_DASHBOARD_UI.newManagedKeyName)
+  const [newManagedKeyRole, setNewManagedKeyRole] = useState<'admin' | 'moderator'>(INITIAL_DASHBOARD_UI.newManagedKeyRole)
+  const [lastCreatedAdminKey, setLastCreatedAdminKey] = useState<string | null>(null)
+  const [rotatedAdminKeys, setRotatedAdminKeys] = useState<Record<string, string>>({})
+
+  const [filterStatus, setFilterStatus] = useState(INITIAL_DASHBOARD_UI.filterStatus)
+  const [selectedReqId, setSelectedReqId] = useState<string | null>(INITIAL_DASHBOARD_UI.selectedReqId)
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(INITIAL_DASHBOARD_UI.selectedGroupId)
+  const [selectedZoneId, setSelectedZoneId] = useState<string | null>(INITIAL_DASHBOARD_UI.selectedZoneId)
+  const [zoneFocusKey, setZoneFocusKey] = useState(0)
+  const [expandedDriverId, setExpandedDriverId] = useState<string | null>(INITIAL_DASHBOARD_UI.expandedDriverId)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(INITIAL_DASHBOARD_UI.sidebarCollapsed)
+  const [filterDate, setFilterDate] = useState<string>(INITIAL_DASHBOARD_UI.filterDate)
+  const [filterDateEnd, setFilterDateEnd] = useState<string>(INITIAL_DASHBOARD_UI.filterDateEnd)
+  const [filterTime, setFilterTime] = useState<string>(INITIAL_DASHBOARD_UI.filterTime)
+  const [filterTimeEnd, setFilterTimeEnd] = useState<string>(INITIAL_DASHBOARD_UI.filterTimeEnd)
+  const [enabledColors, setEnabledColors] = useState<Set<MapColorGroupKey>>(
+    () => new Set(INITIAL_DASHBOARD_UI.enabledColors),
+  )
+  const handleToggleColor = (key: MapColorGroupKey) => {
+    setEnabledColors((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+  const [requestsTotal, setRequestsTotal] = useState(0)
+  const [isLoadingMoreRequests, setIsLoadingMoreRequests] = useState(false)
+  const [searchQuery, setSearchQuery] = useState(INITIAL_DASHBOARD_UI.searchQuery)
+
+  const [assignModalReqIds, setAssignModalReqIds] = useState<string[] | null>(null)
+  const [routeEditDraft, setRouteEditDraft] = useState<RideDraft | null>(null)
+  const [isSavingRoute, setIsSavingRoute] = useState(false)
+  const [assignDriverId, setAssignDriverId] = useState<string>(INITIAL_DASHBOARD_UI.assignDriverId)
+  const [isAssigning, setIsAssigning] = useState(false)
+  const [unassigningRequestId, setUnassigningRequestId] = useState<string | null>(null)
+
+  const [isDrawing, setIsDrawing] = useState(INITIAL_DASHBOARD_UI.isDrawing)
+  const [drawingPoints, setDrawingPoints] = useState<LatLng[]>(INITIAL_DASHBOARD_UI.drawingPoints)
+  const [newZoneName, setNewZoneName] = useState(INITIAL_DASHBOARD_UI.newZoneName)
+  const [newZoneColor, setNewZoneColor] = useState(INITIAL_DASHBOARD_UI.newZoneColor)
+  const [editingZoneId, setEditingZoneId] = useState<string | null>(INITIAL_DASHBOARD_UI.editingZoneId)
+  const [isZoneNameModalOpen, setIsZoneNameModalOpen] = useState(false)
+  const zoneBoundaryPoints = useMemo(() => buildSimpleZoneBoundary(drawingPoints), [drawingPoints])
+  const [newDriverName, setNewDriverName] = useState(INITIAL_DASHBOARD_UI.newDriverName)
+  const [newDriverPhotoFile, setNewDriverPhotoFile] = useState<File | null>(null)
+  const [newDriverPhotoPreview, setNewDriverPhotoPreview] = useState<string | null>(null)
+  const [newDriverCarBrand, setNewDriverCarBrand] = useState(INITIAL_DASHBOARD_UI.newDriverCarBrand)
+  const [newDriverCarModel, setNewDriverCarModel] = useState(INITIAL_DASHBOARD_UI.newDriverCarModel)
+  const [newDriverCarPlate, setNewDriverCarPlate] = useState(INITIAL_DASHBOARD_UI.newDriverCarPlate)
+  const [newDriverVehicleColor, setNewDriverVehicleColor] = useState(INITIAL_DASHBOARD_UI.newDriverVehicleColor)
+  const [newDriverSeatsCount, setNewDriverSeatsCount] = useState(INITIAL_DASHBOARD_UI.newDriverSeatsCount)
+  const [newDriverAbout, setNewDriverAbout] = useState(INITIAL_DASHBOARD_UI.newDriverAbout)
+  const [newDriverCanSellPoints, setNewDriverCanSellPoints] = useState(INITIAL_DASHBOARD_UI.newDriverCanSellPoints)
+  const [newDriverCanSelfAssign, setNewDriverCanSelfAssign] = useState(INITIAL_DASHBOARD_UI.newDriverCanSelfAssign)
+  const [lastCreatedDriverKey, setLastCreatedDriverKey] = useState<string | null>(null)
+  const [rotatedDriverKeys, setRotatedDriverKeys] = useState<Record<string, string>>({})
+  const [driverApplications, setDriverApplications] = useState<DriverApplication[]>([])
+  const [driverApplicationsPendingCount, setDriverApplicationsPendingCount] = useState(0)
+  const [driverRegistrationFormSchema, setDriverRegistrationFormSchema] = useState<DriverRegistrationFormSchema>(
+    DEFAULT_DRIVER_REGISTRATION_FORM,
+  )
+  const [lastApprovedDriverApplicationKey, setLastApprovedDriverApplicationKey] = useState<string | null>(null)
+  const [selectedApplicationId, setSelectedApplicationId] = useState<string | null>(
+    () => getInitialDriverRegistrationUi().selectedApplicationId,
+  )
+
+  const handleAdminNotificationSelect = useCallback((notification: AppNotification) => {
+    const payload = notification.payload
+    if (
+      payload &&
+      typeof payload === 'object' &&
+      payload.kind === 'driver_application' &&
+      typeof payload.applicationId === 'string'
+    ) {
+      setActiveTab('drivers')
+      setSelectedApplicationId(payload.applicationId)
+    }
+  }, [])
+
+  const dashboardUiPersistence = useMemo(
+    () => ({
+      activeTab,
+      filterStatus,
+      selectedReqId,
+      selectedGroupId,
+      selectedZoneId,
+      expandedDriverId,
+      sidebarCollapsed,
+      filterDate,
+      filterDateEnd,
+      filterTime,
+      filterTimeEnd,
+      enabledColors: Array.from(enabledColors),
+      searchQuery,
+      assignDriverId,
+      isDrawing,
+      drawingPoints,
+      newZoneName,
+      newZoneColor,
+      editingZoneId,
+      newDriverName,
+      newDriverCarBrand,
+      newDriverCarModel,
+      newDriverCarPlate,
+      newDriverVehicleColor,
+      newDriverSeatsCount,
+      newDriverAbout,
+      newDriverCanSellPoints,
+      newDriverCanSelfAssign,
+      newManagedKeyName,
+      newManagedKeyRole,
+    }),
+    [
+      activeTab,
+      filterStatus,
+      selectedReqId,
+      selectedGroupId,
+      selectedZoneId,
+      expandedDriverId,
+      sidebarCollapsed,
+      filterDate,
+      filterDateEnd,
+      filterTime,
+      filterTimeEnd,
+      enabledColors,
+      searchQuery,
+      assignDriverId,
+      isDrawing,
+      drawingPoints,
+      newZoneName,
+      newZoneColor,
+      editingZoneId,
+      newDriverName,
+      newDriverCarBrand,
+      newDriverCarModel,
+      newDriverCarPlate,
+      newDriverVehicleColor,
+      newDriverSeatsCount,
+      newDriverAbout,
+      newDriverCanSellPoints,
+      newDriverCanSelfAssign,
+      newManagedKeyName,
+      newManagedKeyRole,
+    ],
+  )
+  usePersistAdminUiSlice('dashboard', dashboardUiPersistence)
+
+  const loadManagedKeys = useCallback(async () => {
+    if (adminSession.role !== 'chief_admin') return
+    try {
+      const page = await listAdminKeys({ limit: 100, offset: 0 })
+      setManagedAdminKeys(page.items.filter((item) => item.role !== 'chief_admin' && item.isActive))
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t('admin.errors.loadKeysFailed'))
+    }
+  }, [adminSession.role])
+
+  const ADMIN_PAGE_SIZE = 50
+
+  const loadAll = useCallback(async () => {
+    setErrorMessage(null)
+    try {
+      const [req, drv, passengerPage, zones, price, qrSalesPage, applicationsPage, registrationForm] = await Promise.all([
+        listAdminRequests('all', { limit: ADMIN_PAGE_SIZE, offset: 0 }),
+        listDrivers(false, { limit: 200, offset: 0 }),
+        listAdminPassengers({ limit: 200, offset: 0 }),
+        listServiceZones('cookie', { limit: 500, offset: 0 }),
+        getPricing('cookie'),
+        listAdminQrSales({ limit: 100, offset: 0, redeemedOnly: true }),
+        listDriverApplications({ limit: 100, offset: 0 }),
+        getDriverRegistrationSettings(),
+      ])
+      setRequests(req.items)
+      setRequestsTotal(req.total)
+      setDrivers(drv.items)
+      setPassengers(passengerPage.items)
+      setPassengersTotal(passengerPage.total)
+      setSuggestions([])
+      setServiceZones(zones.items)
+      setPricing(price)
+      setQrSales(qrSalesPage.items)
+      setHasLoadedQrSalesOnce(true)
+      setDriverApplications(applicationsPage.items)
+      setDriverApplicationsPendingCount(applicationsPage.pendingCount)
+      setDriverRegistrationFormSchema(registrationForm)
+      if (adminSession.role === 'chief_admin') {
+        await loadManagedKeys()
+      }
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t('admin.errors.loadAdminDataFailed'))
+    }
+  }, [adminSession, loadManagedKeys])
+
+  const loadMoreRequests = useCallback(async () => {
+    if (isLoadingMoreRequests || requests.length >= requestsTotal) return
+    setIsLoadingMoreRequests(true)
+    try {
+      const page = await listAdminRequests('all', { limit: ADMIN_PAGE_SIZE, offset: requests.length })
+      setRequests((prev) => [...prev, ...page.items])
+      setRequestsTotal(page.total)
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t('errors.loadMoreRequestsFailed'))
+    } finally {
+      setIsLoadingMoreRequests(false)
+    }
+  }, [isLoadingMoreRequests, requests.length, requestsTotal])
+
+  const loadMorePassengers = useCallback(async () => {
+    if (isLoadingMorePassengers || passengers.length >= passengersTotal) return
+    setIsLoadingMorePassengers(true)
+    try {
+      const page = await listAdminPassengers({ limit: 200, offset: passengers.length })
+      setPassengers((previous) => [...previous, ...page.items])
+      setPassengersTotal(page.total)
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t('admin.errors.loadPassengersFailed'))
+    } finally {
+      setIsLoadingMorePassengers(false)
+    }
+  }, [isLoadingMorePassengers, passengers.length, passengersTotal, t])
+
+  const handleAdjustPassengerPoints = useCallback(async (userId: string, delta: number): Promise<boolean> => {
+    try {
+      const updated = await adjustAdminPassengerPoints(userId, delta)
+      setPassengers((previous) => previous.map((passenger) => (
+        passenger.userId === updated.userId ? updated : passenger
+      )))
+      return true
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t('admin.errors.adjustPassengerPointsFailed'))
+      return false
+    }
+  }, [t])
+
+  const startRouteEdit = useCallback((request: RideRequest) => {
+    setRouteEditDraft(toRideDraft(request))
+    setSelectedReqId(request.id)
+    // On mobile the bottom drawer (z-2000) covers the route edit bar — collapse it.
+    if (typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches) {
+      setSidebarCollapsed(true)
+    }
+  }, [])
+
+  const cancelRouteEdit = useCallback(() => {
+    setRouteEditDraft(null)
+  }, [])
+
+  const saveRouteEdit = useCallback(async () => {
+    if (!routeEditDraft) return
+    if (!isOverridden(routeEditDraft)) {
+      setRouteEditDraft(null)
+      return
+    }
+    setIsSavingRoute(true)
+    setErrorMessage(null)
+    try {
+      await patchAdminRideRoute(routeEditDraft.requestId, {
+        fromPoint: {
+          address: routeEditDraft.fromAddress.trim() || routeEditDraft.originalFromAddress,
+          latlng: routeEditDraft.fromLatLng,
+        },
+        toPoint: {
+          address: routeEditDraft.toAddress.trim() || routeEditDraft.originalToAddress,
+          latlng: routeEditDraft.toLatLng,
+        },
+      })
+      await loadAll()
+      setRouteEditDraft(null)
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : t('admin.errors.updateRouteFailed', { defaultValue: 'Failed to update route.' }),
+      )
+    } finally {
+      setIsSavingRoute(false)
+    }
+  }, [loadAll, routeEditDraft, t])
+
+  const resetRouteEdit = useCallback(() => {
+    if (!routeEditDraft) return
+    setRouteEditDraft({
+      ...routeEditDraft,
+      fromAddress: routeEditDraft.originalFromAddress,
+      fromLatLng: { ...routeEditDraft.originalFromLatLng },
+      toAddress: routeEditDraft.originalToAddress,
+      toLatLng: { ...routeEditDraft.originalToLatLng },
+    })
+  }, [routeEditDraft])
+
+  const ensureAdminSession = useCallback(async () => {
+    try {
+      if (typeof window !== 'undefined') {
+        const telegramWindow = window as Window & { Telegram?: any }
+        const telegramWebApp = telegramWindow.Telegram && telegramWindow.Telegram.WebApp
+        const telegramInitData = (telegramWebApp && telegramWebApp.initData) || ''
+        const telegramWebViewData =
+          telegramWindow.Telegram &&
+          telegramWindow.Telegram.WebView &&
+          telegramWindow.Telegram.WebView.initParams &&
+          telegramWindow.Telegram.WebView.initParams.tgWebAppData
+        const initData = telegramInitData || telegramWebViewData || ''
+        if (initData) {
+          window.localStorage.setItem('ride_init_data', initData)
+        }
+      }
+      const session = await getAdminSession()
+      setAdminSession(session)
+    } catch {
+      setAdminSession(FALLBACK_ADMIN_SESSION)
+    } finally {
+      setIsInitialAdminCheckDone(true)
+    }
+  }, [])
+
+  useEffect(() => {
+    void ensureAdminSession()
+  }, [ensureAdminSession])
+
+  useEffect(() => {
+    if (!isInitialAdminCheckDone) return
+    clearTelegramHandoff()
+    setIsWaitingForTelegramAuth(false)
+  }, [isInitialAdminCheckDone])
+
+  useEffect(() => {
+    void loadAll()
+    const pollTimer = window.setInterval(() => {
+      void loadAll()
+    }, ADMIN_DASHBOARD_POLL_MS)
+    return () => window.clearInterval(pollTimer)
+  }, [loadAll])
+
+  const onlineDrivers = useMemo(() => drivers.filter((driver) => driver.isOnline), [drivers])
+
+  const groupColorMap = useMemo(() => {
+    const result: Record<string, string> = {}
+    suggestions.forEach((suggestion, idx) => {
+      result[suggestion.id] = GROUP_COLORS[idx % GROUP_COLORS.length]
+    })
+    return result
+  }, [suggestions])
+
+  const handleAssign = async () => {
+    if (!assignModalReqIds || !assignDriverId) return
+    setIsAssigning(true)
+    try {
+      await assignDriverBulk(assignModalReqIds, assignDriverId, [])
+      await loadAll()
+      setAssignModalReqIds(null)
+      setAssignDriverId('')
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t('admin.errors.assignDriverFailed'))
+    } finally {
+      setIsAssigning(false)
+    }
+  }
+
+  const handleUnassignDriver = async (requestId: string) => {
+    if (unassigningRequestId) return
+    setUnassigningRequestId(requestId)
+    try {
+      await unassignAdminDriver(requestId)
+      await loadAll()
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t('admin.errors.unassignDriverFailed'))
+    } finally {
+      setUnassigningRequestId(null)
+    }
+  }
+
+  const resetZoneDrawing = () => {
+    setIsDrawing(false)
+    setEditingZoneId(null)
+    setDrawingPoints([])
+    setNewZoneName('')
+    setIsZoneNameModalOpen(false)
+  }
+
+  const handleSaveZone = async () => {
+    if (!newZoneName.trim()) {
+      setIsZoneNameModalOpen(true)
+      return
+    }
+    if (zoneBoundaryPoints.length < 3) return
+    try {
+      await createServiceZone({
+        name: newZoneName.trim(),
+        color: newZoneColor,
+        polygon: zoneBoundaryPoints,
+        isActive: true,
+      })
+      await loadAll()
+      resetZoneDrawing()
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t('admin.errors.createZoneFailed'))
+    }
+  }
+
+  const handleShowZoneOnMap = (zoneId: string) => {
+    setSelectedZoneId(zoneId)
+    setZoneFocusKey((key) => key + 1)
+  }
+
+  const handleSelectZoneFromMap = (zoneId: string) => {
+    setActiveTab('zones')
+    setSelectedZoneId(zoneId)
+    setSidebarCollapsed(false)
+  }
+
+  const handleCreateZone = handleSaveZone
+
+  const handleToggleZone = async (zone: ServiceZone) => {
+    try {
+      const updated = await updateServiceZone(zone.id, { isActive: !zone.isActive })
+      setServiceZones((prev) => prev.map((item) => (item.id === updated.id ? updated : item)))
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t('admin.errors.toggleZoneFailed'))
+    }
+  }
+
+  const handleDeleteZone = async (zoneId: string) => {
+    try {
+      await deleteServiceZone(zoneId)
+      setServiceZones((prev) => prev.filter((zone) => zone.id !== zoneId))
+      setSelectedZoneId(null)
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t('admin.errors.deleteZoneFailed'))
+    }
+  }
+
+  const handlePricingChange = async (
+    payload: Partial<
+      Pick<
+        PricingSettings,
+        | 'pointsPerRide'
+        | 'pointPriceCents'
+        | 'pricingMode'
+        | 'pricingFormula'
+        | 'userInfoText'
+        | 'userInfoTextProfile'
+        | 'workStartTime'
+        | 'workEndTime'
+        | 'slotIntervalMinutes'
+      >
+    >,
+  ) => {
+    try {
+      const updated = await updatePricing(payload)
+      setPricing(updated)
+      return true
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t('admin.errors.updatePricingFailed'))
+      return false
+    }
+  }
+
+  const handleAdminLogout = async () => {
+    try {
+      await logoutAdminSession()
+    } finally {
+      setAdminSession(FALLBACK_ADMIN_SESSION)
+      setManagedAdminKeys([])
+      setLastCreatedAdminKey(null)
+      setRotatedAdminKeys({})
+      setLastCreatedDriverKey(null)
+      setRotatedDriverKeys({})
+    }
+  }
+
+  const handleCreateManagedKey = async () => {
+    if (!newManagedKeyName.trim() || adminSession?.role !== 'chief_admin') return
+    try {
+      const result = await createAdminKey({
+        name: newManagedKeyName.trim(),
+        role: newManagedKeyRole,
+      })
+      setLastCreatedAdminKey(result.key)
+      setNewManagedKeyName('')
+      await loadManagedKeys()
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t('admin.errors.createKeyFailed'))
+    }
+  }
+
+  const handleDeleteManagedKey = async (keyId: string) => {
+    if (adminSession?.role !== 'chief_admin') return
+    try {
+      await deleteAdminKey(keyId)
+      await loadManagedKeys()
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t('admin.errors.deleteStaffFailed'))
+    }
+  }
+
+  const handleRotateManagedKey = async (keyId: string) => {
+    if (adminSession?.role !== 'chief_admin') return
+    try {
+      const result = await rotateAdminKey(keyId)
+      setRotatedAdminKeys((prev) => ({ ...prev, [keyId]: result.key }))
+      await loadManagedKeys()
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t('admin.errors.rotateStaffKeyFailed'))
+    }
+  }
+
+  const handleUpdateManagedKey = async (keyId: string, payload: Partial<{ name: string; role: 'admin' | 'moderator' }>) => {
+    if (adminSession?.role !== 'chief_admin') return
+    try {
+      await updateAdminKey(keyId, payload)
+      await loadManagedKeys()
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t('admin.errors.updateStaffFailed'))
+    }
+  }
+
+  const handleCreateDriver = async () => {
+    if (!newDriverName.trim() || !newDriverCarBrand.trim() || !newDriverCarModel.trim() || !newDriverCarPlate.trim()) {
+      return
+    }
+    try {
+      let uploadedPhotoKey: string | undefined
+      if (newDriverPhotoFile) {
+        const uploaded = await uploadDriverPhoto(newDriverPhotoFile)
+        uploadedPhotoKey = uploaded.photoKey
+      }
+      const result = await createDriver({
+        name: newDriverName.trim(),
+        photoKey: uploadedPhotoKey,
+        carBrand: newDriverCarBrand.trim(),
+        carModel: newDriverCarModel.trim(),
+        carPlate: newDriverCarPlate.trim(),
+        vehicleColor: newDriverVehicleColor.trim() || 'Unknown',
+        seatsCount: newDriverSeatsCount,
+        licenseNumber: '',
+        about: newDriverAbout.trim(),
+        canSellPoints: newDriverCanSellPoints,
+        canSelfAssign: newDriverCanSelfAssign,
+      })
+      setLastCreatedDriverKey(result.key)
+      setNewDriverName('')
+      setNewDriverPhotoFile(null)
+      setNewDriverPhotoPreview(null)
+      setNewDriverCarBrand('')
+      setNewDriverCarModel('')
+      setNewDriverCarPlate('')
+      setNewDriverVehicleColor('')
+      setNewDriverSeatsCount(4)
+      setNewDriverAbout('')
+      setNewDriverCanSellPoints(false)
+      setNewDriverCanSelfAssign(false)
+      await loadAll()
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t('admin.errors.createDriverFailed'))
+    }
+  }
+
+  const handleRotateDriverKey = async (driverId: string) => {
+    try {
+      const result = await rotateDriverKey(driverId)
+      setRotatedDriverKeys((prev) => ({ ...prev, [driverId]: result.key }))
+      setDrivers((prev) => prev.map((d) => (d.id === result.driver.id ? result.driver : d)))
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t('admin.errors.rotateDriverKeyFailed'))
+    }
+  }
+
+  const handleUpdateDriver = async (driverId: string, payload: Parameters<typeof updateDriver>[1]) => {
+    try {
+      const updated = await updateDriver(driverId, payload)
+      setDrivers((prev) => prev.map((d) => (d.id === updated.id ? updated : d)))
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t('admin.errors.updateDriverFailed'))
+    }
+  }
+
+  const handleDeleteDriver = async (driverId: string) => {
+    try {
+      await deleteDriver(driverId)
+      setDrivers((prev) => prev.filter((d) => d.id !== driverId))
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t('admin.errors.deleteDriverFailed'))
+    }
+  }
+
+  const handleRefreshDriverApplications = useCallback(async () => {
+    const page = await listDriverApplications({ limit: 100, offset: 0 })
+    setDriverApplications(page.items)
+    setDriverApplicationsPendingCount(page.pendingCount)
+  }, [])
+
+  const handleSaveDriverRegistrationForm = async (schema: DriverRegistrationFormSchema) => {
+    try {
+      const updated = await updateDriverRegistrationSettings(schema)
+      setDriverRegistrationFormSchema(updated)
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t('common.error'))
+      throw error
+    }
+  }
+
+  const handleApproveDriverApplication = async (applicationId: string) => {
+    const result = await approveDriverApplication(applicationId)
+    setLastApprovedDriverApplicationKey(result.key)
+    await loadAll()
+    return result.key
+  }
+
+  const handleRejectDriverApplication = async (applicationId: string, reason?: string) => {
+    await rejectDriverApplication(applicationId, reason)
+    await loadAll()
+  }
+
+  const resolvedAdminSession = adminSession
+
+  return (
+    <div className="h-[100dvh] flex flex-col bg-white overflow-hidden">
+      <AdminHeader
+        onlineDriversCount={onlineDrivers.length}
+        adminSession={resolvedAdminSession}
+        onLogout={() => void handleAdminLogout()}
+        onNotificationSelect={handleAdminNotificationSelect}
+      />
+
+      <div className="flex flex-1 overflow-hidden relative">
+        <AdminSidebar
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          filterStatus={filterStatus}
+          setFilterStatus={setFilterStatus}
+          filterDate={filterDate}
+          filterDateEnd={filterDateEnd}
+          filterTime={filterTime}
+          filterTimeEnd={filterTimeEnd}
+          enabledColors={enabledColors}
+          requests={requests}
+          requestsTotal={requestsTotal}
+          isLoadingMoreRequests={isLoadingMoreRequests}
+          onLoadMoreRequests={() => void loadMoreRequests()}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          selectedReqId={selectedReqId}
+          setSelectedReqId={setSelectedReqId}
+          setAssignModalReqIds={setAssignModalReqIds}
+          handleUnassignDriver={handleUnassignDriver}
+          unassigningRequestId={unassigningRequestId}
+          suggestions={suggestions}
+          selectedGroupId={selectedGroupId}
+          setSelectedGroupId={setSelectedGroupId}
+          groupColorMap={groupColorMap}
+          drivers={drivers}
+          passengers={passengers}
+          passengersTotal={passengersTotal}
+          isLoadingMorePassengers={isLoadingMorePassengers}
+          onLoadMorePassengers={() => void loadMorePassengers()}
+          handleAdjustPassengerPoints={handleAdjustPassengerPoints}
+          expandedDriverId={expandedDriverId}
+          setExpandedDriverId={setExpandedDriverId}
+          isDrawing={isDrawing}
+          setIsDrawing={setIsDrawing}
+          newZoneName={newZoneName}
+          setNewZoneName={setNewZoneName}
+          newZoneColor={newZoneColor}
+          setNewZoneColor={setNewZoneColor}
+          drawingPoints={drawingPoints}
+          setDrawingPoints={(updater) => setDrawingPoints((prev) => updater(prev))}
+          handleCreateZone={handleSaveZone}
+          resetZoneDrawing={resetZoneDrawing}
+          serviceZones={serviceZones}
+          selectedZoneId={selectedZoneId}
+          setSelectedZoneId={setSelectedZoneId}
+          onShowZoneOnMap={handleShowZoneOnMap}
+          handleToggleZone={handleToggleZone}
+          handleDeleteZone={handleDeleteZone}
+          pricing={pricing}
+          qrSales={qrSales}
+          hasLoadedQrSalesOnce={hasLoadedQrSalesOnce}
+          handlePricingChange={handlePricingChange}
+          adminSession={resolvedAdminSession}
+          newManagedKeyName={newManagedKeyName}
+          setNewManagedKeyName={setNewManagedKeyName}
+          newManagedKeyRole={newManagedKeyRole}
+          setNewManagedKeyRole={setNewManagedKeyRole}
+          handleCreateManagedKey={handleCreateManagedKey}
+          lastCreatedAdminKey={lastCreatedAdminKey}
+          rotatedAdminKeys={rotatedAdminKeys}
+          managedAdminKeys={managedAdminKeys}
+          handleRevokeManagedKey={handleDeleteManagedKey}
+          handleRotateManagedKey={handleRotateManagedKey}
+          handleUpdateManagedKey={handleUpdateManagedKey}
+          newDriverName={newDriverName}
+          setNewDriverName={setNewDriverName}
+          newDriverPhotoPreview={newDriverPhotoPreview}
+          setNewDriverPhotoFile={setNewDriverPhotoFile}
+          setNewDriverPhotoPreview={setNewDriverPhotoPreview}
+          newDriverCarBrand={newDriverCarBrand}
+          setNewDriverCarBrand={setNewDriverCarBrand}
+          newDriverCarModel={newDriverCarModel}
+          setNewDriverCarModel={setNewDriverCarModel}
+          newDriverCarPlate={newDriverCarPlate}
+          setNewDriverCarPlate={setNewDriverCarPlate}
+          newDriverVehicleColor={newDriverVehicleColor}
+          setNewDriverVehicleColor={setNewDriverVehicleColor}
+          newDriverSeatsCount={newDriverSeatsCount}
+          setNewDriverSeatsCount={setNewDriverSeatsCount}
+          newDriverAbout={newDriverAbout}
+          setNewDriverAbout={setNewDriverAbout}
+          newDriverCanSellPoints={newDriverCanSellPoints}
+          setNewDriverCanSellPoints={setNewDriverCanSellPoints}
+          newDriverCanSelfAssign={newDriverCanSelfAssign}
+          setNewDriverCanSelfAssign={setNewDriverCanSelfAssign}
+          lastCreatedDriverKey={lastCreatedDriverKey}
+          rotatedDriverKeys={rotatedDriverKeys}
+          handleCreateDriver={handleCreateDriver}
+          handleRotateDriverKey={handleRotateDriverKey}
+          handleUpdateDriver={handleUpdateDriver}
+          handleDeleteDriver={handleDeleteDriver}
+          driverApplications={driverApplications}
+          driverApplicationsPendingCount={driverApplicationsPendingCount}
+          driverRegistrationFormSchema={driverRegistrationFormSchema}
+          lastApprovedDriverApplicationKey={lastApprovedDriverApplicationKey}
+          handleRefreshDriverApplications={handleRefreshDriverApplications}
+          handleSaveDriverRegistrationForm={handleSaveDriverRegistrationForm}
+          handleApproveDriverApplication={handleApproveDriverApplication}
+          handleRejectDriverApplication={handleRejectDriverApplication}
+          selectedApplicationId={selectedApplicationId}
+          onSelectedApplicationIdChange={setSelectedApplicationId}
+        />
+
+        <AdminMap
+          requests={requests}
+          serviceZones={serviceZones}
+          drivers={drivers}
+          isDrawing={isDrawing}
+          drawingPoints={drawingPoints}
+          newZoneColor={newZoneColor}
+          selectedZoneId={selectedZoneId}
+          zoneFocusKey={zoneFocusKey}
+          selectedReqId={selectedReqId}
+          onSelectRequest={setSelectedReqId}
+          onSelectDriver={(driverId) => {
+            setActiveTab('drivers')
+            setExpandedDriverId(driverId)
+          }}
+          onSelectZone={handleSelectZoneFromMap}
+          onOpenAssignModal={setAssignModalReqIds}
+          onUnassignDriver={handleUnassignDriver}
+          unassigningRequestId={unassigningRequestId}
+          onOpenEditRoute={(requestId) => {
+            const request = requests.find((item) => item.id === requestId)
+            if (request) startRouteEdit(request)
+          }}
+          routeEditDraft={routeEditDraft}
+          onRouteEditDraftChange={setRouteEditDraft}
+          onCancelRouteEdit={cancelRouteEdit}
+          onSaveRouteEdit={() => void saveRouteEdit()}
+          onResetRouteEdit={resetRouteEdit}
+          isSavingRoute={isSavingRoute}
+          onDrawPoint={(point) => {
+            if (!isDrawing) return
+            setDrawingPoints((prev) => [...prev, point])
+          }}
+          onUndoZonePoint={() => setDrawingPoints((prev) => prev.slice(0, -1))}
+          onSaveZone={() => void handleSaveZone()}
+          sidebarCollapsed={sidebarCollapsed}
+          onToggleSidebar={() => setSidebarCollapsed((v) => !v)}
+          filterDate={filterDate}
+          filterDateEnd={filterDateEnd}
+          filterTime={filterTime}
+          filterTimeEnd={filterTimeEnd}
+          onFilterDateChange={setFilterDate}
+          onFilterDateEndChange={setFilterDateEnd}
+          onFilterTimeChange={setFilterTime}
+          onFilterTimeEndChange={setFilterTimeEnd}
+          slotIntervalMinutes={pricing.slotIntervalMinutes}
+          enabledColors={enabledColors}
+          onToggleColor={handleToggleColor}
+        />
+      </div>
+
+      {errorMessage && (
+        <AdminErrorToast errorMessage={errorMessage} onClose={() => setErrorMessage(null)} />
+      )}
+
+      <AdminAssignDriverModal
+        assignModalReqIds={assignModalReqIds}
+        requests={requests}
+        drivers={drivers}
+        assignDriverId={assignDriverId}
+        isAssigning={isAssigning}
+        onSelectDriver={setAssignDriverId}
+        onClose={() => setAssignModalReqIds(null)}
+        onSubmit={() => void handleAssign()}
+      />
+
+      {isZoneNameModalOpen && (
+        <AdminModalShell
+          onClose={() => setIsZoneNameModalOpen(false)}
+          title={t('admin.zones.newZone')}
+          maxWidthClass="max-w-sm"
+        >
+          <form
+            className="p-5 space-y-4"
+            style={{ paddingBottom: 'calc(1.25rem + var(--app-safe-area-bottom-total, 0px))' }}
+            onSubmit={(event) => {
+              event.preventDefault()
+              void handleSaveZone()
+            }}
+          >
+            <label className="block space-y-2">
+              <span className="text-sm font-bold text-black">{t('admin.zones.zoneNamePlaceholder')}</span>
+              <input
+                autoFocus
+                value={newZoneName}
+                onChange={(event) => setNewZoneName(event.target.value)}
+                placeholder={t('admin.zones.zoneNamePlaceholder')}
+                className="w-full h-12 rounded-xl border border-border bg-white px-4 text-base font-semibold text-black outline-none focus:border-black"
+              />
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setIsZoneNameModalOpen(false)}
+                className="h-12 rounded-xl border border-border bg-white text-sm font-bold text-black"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                type="submit"
+                disabled={!newZoneName.trim() || zoneBoundaryPoints.length < 3}
+                className="h-12 rounded-xl bg-black text-sm font-bold text-white disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {t('common.save')}
+              </button>
+            </div>
+          </form>
+        </AdminModalShell>
+      )}
+
+    </div>
+  )
+}

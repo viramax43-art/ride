@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>Ride — Админ-панель</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <script>
+      (function () {
+        try {
+          window.__RIDE_DEFAULT_LANGUAGE__ = 'ru';
+          window.localStorage.setItem('lithcar:language', 'ru');
+          window.localStorage.setItem('i18nextLng', 'ru');
+          window.localStorage.setItem('language', 'ru');
+          window.localStorage.setItem('ride_language', 'ru');
+          document.documentElement.lang = 'ru';
+        } catch (error) {}
+      })();
+    </script>
+    <script>
+      (function () {
+        try {
+          window.__RIDE_ADMIN_MODE__ = true;
+          if (window.location.pathname !== '/admin') {
+            window.history.replaceState({}, '', '/admin');
+          }
+        } catch (error) {}
+      })();
+    </script>
+    <script>
+      (function () {
+        var ADMIN_BUNDLE_SRC = '/assets/admin-zone-name-modal.js?v=20260729v';
+        var attach = function () {
+          var script = document.createElement('script');
+          script.type = 'module';
+          script.crossOrigin = 'anonymous';
+          script.src = ADMIN_BUNDLE_SRC;
+          document.head.appendChild(script);
+        };
+
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', attach, { once: true });
+          return;
+        }
+
+        attach();
+      })();
+    </script>
+    <link rel="stylesheet" crossorigin href="/assets/admin-main-B1T9lw79.css?v=20260729v" />
+    <link rel="stylesheet" crossorigin href="/assets/admin-mobile-overrides.css?v=20260729u" />
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

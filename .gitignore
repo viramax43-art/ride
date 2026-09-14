@@ -1,0 +1,39 @@
+# OS / IDE
+.DS_Store
+Thumbs.db
+Desktop.ini
+__MACOSX/
+.idea/
+*.iml
+
+# Android / Gradle
+.gradle/
+.kotlin/
+build/
+local.properties
+*.apk
+*.aab
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Node / frontend
+**/node_modules/
+**/.vite/
+**/dist/
+**/.pnpm-store/
+
+# Build caches
+.backend-build/
+.frontend-build/**/node_modules/
+
+# Env / secrets
+**/.env
+**/.env.*
+!**/.env.example
+admin-login.json
+**/admin_password*.json
+
+# Codex / temp
+.codex-tools/
+.tmp/
