@@ -54,14 +54,6 @@ export default function RequestDetail() {
   const [isSignalMode, setIsSignalMode] = useState(false)
   const [showEditSheet, setShowEditSheet] = useState(false)
 
-  const goBack = () => {
-    if (window.history.length > 1) {
-      navigate(-1)
-      return
-    }
-    navigate('/requests', { replace: true })
-  }
-
   useEffect(() => {
     if (!id) return
     let cancelled = false
@@ -110,7 +102,7 @@ export default function RequestDetail() {
           style={{ paddingTop: 'var(--app-user-safe-top)' }}
         >
           <div className="flex items-center gap-3 px-4 h-14">
-            <button onClick={goBack} className="p-1">
+            <button onClick={() => navigate(-1)} className="p-1">
               <ArrowLeft size={22} weight="bold" />
             </button>
             <Skeleton width={140} height={16} />
@@ -173,16 +165,16 @@ export default function RequestDetail() {
       >
         <div className="flex items-center gap-3 px-3 h-14 w-full max-w-2xl mx-auto">
           <button
-            onClick={goBack}
+            onClick={() => navigate(-1)}
             className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-surface transition-colors flex-shrink-0"
           >
             <ArrowLeft size={20} weight="bold" />
           </button>
-          <h1 className="text-base font-bold flex-1">
+          <h1 className="text-base font-bold flex-1 min-w-0 truncate">
             {t('passenger.requestTitle', { number: request.rideNumber, defaultValue: `Request #${request.rideNumber}` })}
           </h1>
           <span
-            className="text-xs font-bold px-3 py-1 rounded-pill"
+            className="text-xs font-bold px-3 py-1 rounded-pill whitespace-nowrap flex-shrink-0"
             style={{ color: status.color, background: status.bg }}
           >
             {t(`status.${request.status}`, { defaultValue: request.status })}
@@ -280,7 +272,7 @@ export default function RequestDetail() {
                 setIsConfirmingPickup(true)
                 setErrorMessage(null)
                 try {
-                  const updated = await confirmPickup(request.id)
+                  const updated = await confirmPickup(request.id, request.pickupRevision ?? 0)
                   setRequest(updated)
                 } catch (error) {
                   setErrorMessage(

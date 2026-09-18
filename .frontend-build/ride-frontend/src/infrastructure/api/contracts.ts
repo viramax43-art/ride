@@ -105,14 +105,6 @@ export interface AdminQrSaleAudit {
   }>
 }
 
-export interface AdminPassenger {
-  userId: string
-  username: string | null
-  pointsBalance: number
-  language: 'lt' | 'pl' | 'en' | 'ru'
-  createdAt: string
-}
-
 export interface RidePointOverride {
   requestId: string
   fromPoint?: { address: string; latlng: { lat: number; lng: number } }
@@ -136,6 +128,7 @@ export interface RideRequestApi {
   offerId?: string | null
   pickupChangedByDriver: boolean
   pickupConfirmedAt: string | null
+  pickupRevision?: number
   assignedDriver?: {
     id: string
     userId?: string | null
