@@ -11,7 +11,7 @@ export function AppProviders({ deps, children }: { deps: AppDependencies; childr
     void (async () => {
       try {
         const user = await getCurrentUser()
-        const nextLanguage = window.location.pathname.startsWith('/admin')
+        const nextLanguage = window.location.pathname.includes('/admin')
           ? 'ru'
           : normalizeLanguage(user.language)
         await i18n.changeLanguage(nextLanguage)

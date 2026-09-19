@@ -102,7 +102,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   if (response.status === 401 && authMode === 'bearer') {
     const rawBody = await response.text()
     clearAccessToken()
-    if (!window.location.pathname.startsWith('/admin')) {
+    if (!window.location.pathname.includes('/admin')) {
       window.location.replace('https://t.me/rideminiapp_bot?start=auth')
     }
     console.warn('[httpClient] apiRequest 401', { path, status: response.status, body: rawBody })

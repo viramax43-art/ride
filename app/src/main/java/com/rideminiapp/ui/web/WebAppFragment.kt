@@ -225,7 +225,7 @@ class WebAppFragment : Fragment() {
                 }
             }, FrameLayout.LayoutParams(1, 1, Gravity.TOP or Gravity.START))
 
-            updateRefreshButtonLayout(if (isAdminApp) "/admin" else "/")
+            updateRefreshButtonLayout(if (isAdminApp) "/ride/admin" else "/ride/")
         }
     }
 
@@ -746,7 +746,7 @@ class WebAppFragment : Fragment() {
         if (isAdminApp) {
             val adminDashboardUrl = Uri.parse(targetUrl)
                 .buildUpon()
-                .appendPath("admin-page.html")
+                .appendPath("admin")
                 .appendQueryParameter("adminMode", "1")
                 .appendQueryParameter("native", "1")
                 .appendQueryParameter("v", ADMIN_WEB_VERSION)
@@ -806,7 +806,7 @@ class WebAppFragment : Fragment() {
     private fun buildAdminLaunchUrl(baseUrl: String): String {
         return Uri.parse(baseUrl)
             .buildUpon()
-            .appendPath("admin-page.html")
+            .appendPath("admin")
             .appendQueryParameter("adminMode", "1")
             .appendQueryParameter("native", "1")
             .appendQueryParameter("v", ADMIN_WEB_VERSION)

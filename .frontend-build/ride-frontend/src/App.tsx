@@ -7,6 +7,8 @@ import Profile from './pages/passenger/Profile'
 import DriverCabinet from './pages/driver/DriverCabinet'
 import DriverMagicLogin from './pages/driver/DriverMagicLogin'
 import DriverRegistration from './pages/driver/DriverRegistration'
+import AdminDashboard from './pages/admin/AdminDashboard'
+import BotAddressPicker from './pages/bot/BotAddressPicker'
 
 function PassengerRoute({ children }: { children: React.ReactNode }) {
   return <OnboardingGate>{children}</OnboardingGate>
@@ -14,7 +16,7 @@ function PassengerRoute({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/ride">
       <Routes>
         <Route path="/" element={<PassengerRoute><NewRequest /></PassengerRoute>} />
         <Route path="/requests" element={<PassengerRoute><MyRequests /></PassengerRoute>} />
@@ -22,7 +24,8 @@ export default function App() {
         <Route path="/profile" element={<PassengerRoute><Profile /></PassengerRoute>} />
         <Route path="/driver/register" element={<DriverRegistration />} />
         <Route path="/driver/enter/:token" element={<DriverMagicLogin />} />
-        <Route path="/admin" element={<Navigate to="/" replace />} />
+        <Route path="/admin" element={<AdminDashboard />} />
+        <Route path="/bot/pick" element={<BotAddressPicker />} />
         <Route path="/driver" element={<DriverCabinet />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
